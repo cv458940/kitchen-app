@@ -1,31 +1,30 @@
+// Initialize Supabase client
+const SUPABASE_URL = 'https://qotwmbeawwxlmbzuhazt.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFvdHdtYmVhd3d4bG1ienVoYXp0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY5NzM0NzMsImV4cCI6MjA4MjU0OTQ3M30.v9w7LxV-JdTmi5zWdoyf4otcpcnAT7UGkn6NXIlqAo0';
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
 class KitchenListsApp {
     constructor() {
         this.currentUser = null;
         this.currentChecklist = null;
         this.viewMode = 'myLists'; // 'myLists' or 'employeeLists'
         this.selectedEmployee = 'all';
-        this.data = this.loadData();
+        this.users = [];
+        this.checklists = [];
+        this.tasks = [];
         this.init();
     }
 
-    init() {
-        // Initialize default admin user if none exist
-        if (!this.data.users || this.data.users.length === 0) {
-            this.data.users = [
-                { username: 'Admin', role: 'admin', password: 'password' }
-            ];
-            this.saveData();
+    async init() {
+        try {
+            // Load initial data
+            await this.loadUsers();
+            this.setupEventListeners();
+            this.showLoginScreen();
+        } catch (error) {
+            console.error('Initialization error:', error);
+            alert('Failed to initialize app. Please refresh the page.');
         }
-
-        // Ensure admin user exists (migration)
-        const adminExists = this.data.users.find(u => u.role === 'admin');
-        if (!adminExists) {
-            this.data.users.push({ username: 'Admin', role: 'admin', password: 'password' });
-            this.saveData();
-        }
-
-        this.setupEventListeners();
-        this.showLoginScreen();
     }
 
     setupEventListeners() {
@@ -85,6 +84,63 @@ class KitchenListsApp {
         });
     }
 
+    // ============================================
+    // DATABASE OPERATIONS
+    // ============================================
+
+    async loadUsers() {
+        const { data, error } = await supabase
+            .from('users')
+            .select('*')
+            .order('username');
+
+        if (error) {
+            console.error('Error loading users:', error);
+            this.users = [];
+        } else {
+            this.users = data || [];
+        }
+    }
+
+    async loadChecklists(ownerId = null) {
+        let query = supabase
+            .from('checklists')
+            .select('*')
+            .order('name');
+
+        if (ownerId) {
+            query = query.eq('owner_id', ownerId);
+        }
+
+        const { data, error } = await query;
+
+        if (error) {
+            console.error('Error loading checklists:', error);
+            this.checklists = [];
+        } else {
+            this.checklists = data || [];
+        }
+    }
+
+    async loadTasks(checklistId) {
+        const { data, error } = await supabase
+            .from('tasks')
+            .select('*')
+            .eq('checklist_id', checklistId)
+            .order('position');
+
+        if (error) {
+            console.error('Error loading tasks:', error);
+            this.tasks = [];
+        } else {
+            this.tasks = data || [];
+        }
+    }
+
+    // ============================================
+    // LOGIN / LOGOUT
+    // ============================================
+
     showLoginScreen() {
         document.getElementById('loginScreen').style.display = 'flex';
         document.getElementById('mainApp').style.display = 'none';
@@ -95,22 +151,22 @@ class KitchenListsApp {
         const select = document.getElementById('userSelect');
         select.innerHTML = '<option value="">-- Select User --</option>';
 
-        this.data.users.forEach(user => {
+        this.users.forEach(user => {
             const option = document.createElement('option');
-            option.value = user.username;
+            option.value = user.id;
             option.textContent = `${user.username} (${user.role})`;
             select.appendChild(option);
         });
     }
 
     handleUserSelection(e) {
-        const username = e.target.value;
+        const userId = e.target.value;
         const passwordSection = document.getElementById('passwordSection');
         const passwordInput = document.getElementById('passwordInput');
 
-        if (username) {
-            const user = this.data.users.find(u => u.username === username);
-            // Show password field for admin users
+        if (userId) {
+            const user = this.users.find(u => u.id === userId);
+            // Show password field for admin/manager users
             if (user && (user.role === 'admin' || user.role === 'manager')) {
                 passwordSection.style.display = 'block';
                 passwordInput.focus();
@@ -124,14 +180,14 @@ class KitchenListsApp {
         }
     }
 
-    login() {
-        const username = document.getElementById('userSelect').value;
-        if (!username) {
+    async login() {
+        const userId = document.getElementById('userSelect').value;
+        if (!userId) {
             alert('Please select a user!');
             return;
         }
 
-        const user = this.data.users.find(u => u.username === username);
+        const user = this.users.find(u => u.id === userId);
 
         // Check password for admin/manager users
         if (user && (user.role === 'admin' || user.role === 'manager')) {
@@ -166,6 +222,7 @@ class KitchenListsApp {
         }
 
         this.viewMode = 'myLists';
+        await this.loadChecklists();
         this.renderChecklistTabs();
         this.updateUIPermissions();
     }
@@ -196,10 +253,16 @@ class KitchenListsApp {
         this.currentUser = null;
         this.currentChecklist = null;
         this.viewMode = 'myLists';
+        this.checklists = [];
+        this.tasks = [];
         this.showLoginScreen();
     }
 
-    switchView(mode) {
+    // ============================================
+    // VIEW SWITCHING
+    // ============================================
+
+    async switchView(mode) {
         this.viewMode = mode;
         this.currentChecklist = null;
 
@@ -211,6 +274,7 @@ class KitchenListsApp {
         document.getElementById('employeeFilter').style.display =
             mode === 'employeeLists' ? 'flex' : 'none';
 
+        await this.loadChecklists();
         this.renderChecklistTabs();
         this.renderChecklist();
     }
@@ -219,17 +283,21 @@ class KitchenListsApp {
         const select = document.getElementById('employeeSelect');
         select.innerHTML = '<option value="all">All Employees</option>';
 
-        this.data.users
+        this.users
             .filter(u => u.role === 'employee')
             .forEach(user => {
                 const option = document.createElement('option');
-                option.value = user.username;
+                option.value = user.id;
                 option.textContent = user.username;
                 select.appendChild(option);
             });
     }
 
-    createChecklist() {
+    // ============================================
+    // CHECKLIST MANAGEMENT
+    // ============================================
+
+    async createChecklist() {
         const input = document.getElementById('newChecklistInput');
         const name = input.value.trim();
 
@@ -238,40 +306,64 @@ class KitchenListsApp {
             return;
         }
 
-        const owner = this.viewMode === 'myLists' ? this.currentUser.username : this.selectedEmployee;
+        const ownerId = this.viewMode === 'myLists'
+            ? this.currentUser.id
+            : this.selectedEmployee;
 
-        if (!this.data.checklists[owner]) {
-            this.data.checklists[owner] = {};
-        }
+        // Check if checklist already exists
+        const existing = this.checklists.find(c =>
+            c.owner_id === ownerId && c.name === name
+        );
 
-        if (this.data.checklists[owner][name]) {
+        if (existing) {
             alert('A checklist with this name already exists!');
             return;
         }
 
-        this.data.checklists[owner][name] = [];
-        this.saveData();
+        const { data, error } = await supabase
+            .from('checklists')
+            .insert([{ name, owner_id: ownerId }])
+            .select()
+            .single();
+
+        if (error) {
+            console.error('Error creating checklist:', error);
+            alert('Failed to create checklist. Please try again.');
+            return;
+        }
+
+        await this.loadChecklists();
         this.renderChecklistTabs();
-        this.switchChecklist(owner, name);
+        await this.switchChecklist(data.id);
         input.value = '';
         input.focus();
     }
 
-    deleteChecklist() {
+    async deleteChecklist() {
         if (!this.currentChecklist) return;
 
-        const { owner, name } = this.currentChecklist;
+        const checklistName = this.checklists.find(c => c.id === this.currentChecklist)?.name;
 
-        if (confirm(`Are you sure you want to delete "${name}"? This will delete all tasks in this checklist.`)) {
-            delete this.data.checklists[owner][name];
-            this.saveData();
+        if (confirm(`Are you sure you want to delete "${checklistName}"? This will delete all tasks in this checklist.`)) {
+            const { error } = await supabase
+                .from('checklists')
+                .delete()
+                .eq('id', this.currentChecklist);
 
+            if (error) {
+                console.error('Error deleting checklist:', error);
+                alert('Failed to delete checklist. Please try again.');
+                return;
+            }
+
+            await this.loadChecklists();
             const availableChecklists = this.getAvailableChecklists();
+
             if (availableChecklists.length > 0) {
-                const first = availableChecklists[0];
-                this.switchChecklist(first.owner, first.name);
+                await this.switchChecklist(availableChecklists[0].id);
             } else {
                 this.currentChecklist = null;
+                this.tasks = [];
                 document.getElementById('currentChecklistName').textContent = 'Select a checklist';
                 document.getElementById('deleteChecklistBtn').style.display = 'none';
                 document.getElementById('checklistItems').innerHTML = `
@@ -287,34 +379,18 @@ class KitchenListsApp {
     }
 
     getAvailableChecklists() {
-        const checklists = [];
-
         if (this.viewMode === 'myLists') {
-            // Show only current user's checklists
-            const userChecklists = this.data.checklists[this.currentUser.username] || {};
-            Object.keys(userChecklists).forEach(name => {
-                checklists.push({ owner: this.currentUser.username, name });
-            });
+            return this.checklists.filter(c => c.owner_id === this.currentUser.id);
         } else {
-            // Show employee checklists (manager view)
             if (this.selectedEmployee === 'all') {
-                this.data.users
+                const employeeIds = this.users
                     .filter(u => u.role === 'employee')
-                    .forEach(user => {
-                        const userChecklists = this.data.checklists[user.username] || {};
-                        Object.keys(userChecklists).forEach(name => {
-                            checklists.push({ owner: user.username, name });
-                        });
-                    });
+                    .map(u => u.id);
+                return this.checklists.filter(c => employeeIds.includes(c.owner_id));
             } else {
-                const userChecklists = this.data.checklists[this.selectedEmployee] || {};
-                Object.keys(userChecklists).forEach(name => {
-                    checklists.push({ owner: this.selectedEmployee, name });
-                });
+                return this.checklists.filter(c => c.owner_id === this.selectedEmployee);
             }
         }
-
-        return checklists;
     }
 
     renderChecklistTabs() {
@@ -331,16 +407,15 @@ class KitchenListsApp {
         }
 
         tabsContainer.innerHTML = checklists.map(checklist => {
-            const isActive = this.currentChecklist &&
-                            this.currentChecklist.owner === checklist.owner &&
-                            this.currentChecklist.name === checklist.name;
+            const isActive = this.currentChecklist === checklist.id;
+            const owner = this.users.find(u => u.id === checklist.owner_id);
             const displayName = this.viewMode === 'employeeLists' ?
-                `${checklist.owner} - ${checklist.name}` : checklist.name;
+                `${owner?.username || 'Unknown'} - ${checklist.name}` : checklist.name;
 
             return `
                 <button
                     class="tab-button ${isActive ? 'active' : ''}"
-                    onclick="app.switchChecklist('${this.escapeHtml(checklist.owner)}', '${this.escapeHtml(checklist.name)}')"
+                    onclick="app.switchChecklist('${checklist.id}')"
                 >
                     ${this.escapeHtml(displayName)}
                 </button>
@@ -348,19 +423,34 @@ class KitchenListsApp {
         }).join('');
     }
 
-    switchChecklist(owner, name) {
-        this.currentChecklist = { owner, name };
-        document.getElementById('currentChecklistName').textContent =
-            this.viewMode === 'employeeLists' ? `${owner} - ${name}` : name;
+    async switchChecklist(checklistId) {
+        this.currentChecklist = checklistId;
+        const checklist = this.checklists.find(c => c.id === checklistId);
+
+        if (!checklist) return;
+
+        const owner = this.users.find(u => u.id === checklist.owner_id);
+        const displayName = this.viewMode === 'employeeLists'
+            ? `${owner?.username || 'Unknown'} - ${checklist.name}`
+            : checklist.name;
+
+        document.getElementById('currentChecklistName').textContent = displayName;
+
         const isManagerOrAdmin = this.currentUser.role === 'admin' || this.currentUser.role === 'manager';
         document.getElementById('deleteChecklistBtn').style.display = isManagerOrAdmin ? 'inline-block' : 'none';
+
         this.renderChecklistTabs();
+        await this.loadTasks(checklistId);
         this.renderChecklist();
         this.updateStats();
         this.updateUIPermissions();
     }
 
-    addItem() {
+    // ============================================
+    // TASK MANAGEMENT
+    // ============================================
+
+    async addItem() {
         if (!this.currentChecklist) {
             alert('Please create or select a checklist first!');
             return;
@@ -375,81 +465,123 @@ class KitchenListsApp {
             return;
         }
 
-        const { owner, name } = this.currentChecklist;
+        const position = this.tasks.length;
 
-        const newItem = {
-            id: Date.now(),
-            text: text,
-            type: taskType, // 'checkbox', 'temperature', or 'text'
-            value: null, // For temperature and text inputs
-            completed: false, // For checkboxes
-            completedAt: null,
-            completedBy: null,
-            comment: '' // Comments for any task
-        };
+        const { data, error } = await supabase
+            .from('tasks')
+            .insert([{
+                checklist_id: this.currentChecklist,
+                text: text,
+                type: taskType,
+                value: null,
+                completed: false,
+                completed_at: null,
+                completed_by: null,
+                comment: '',
+                position: position
+            }])
+            .select()
+            .single();
 
-        this.data.checklists[owner][name].push(newItem);
-        this.saveData();
+        if (error) {
+            console.error('Error adding task:', error);
+            alert('Failed to add task. Please try again.');
+            return;
+        }
+
+        await this.loadTasks(this.currentChecklist);
         this.renderChecklist();
         this.updateStats();
         input.value = '';
         input.focus();
     }
 
-    deleteItem(id) {
-        const { owner, name } = this.currentChecklist;
-        this.data.checklists[owner][name] = this.data.checklists[owner][name].filter(
-            item => item.id !== id
-        );
-        this.saveData();
+    async deleteItem(id) {
+        const { error } = await supabase
+            .from('tasks')
+            .delete()
+            .eq('id', id);
+
+        if (error) {
+            console.error('Error deleting task:', error);
+            alert('Failed to delete task. Please try again.');
+            return;
+        }
+
+        await this.loadTasks(this.currentChecklist);
         this.renderChecklist();
         this.updateStats();
     }
 
-    toggleItem(id) {
-        const { owner, name } = this.currentChecklist;
-        const item = this.data.checklists[owner][name].find(item => item.id === id);
+    async toggleItem(id) {
+        const task = this.tasks.find(t => t.id === id);
 
-        if (item && item.type === 'checkbox') {
-            item.completed = !item.completed;
-            if (item.completed) {
-                item.completedAt = new Date().toISOString();
-                item.completedBy = this.currentUser.username;
-            } else {
-                item.completedAt = null;
-                item.completedBy = null;
+        if (task && task.type === 'checkbox') {
+            const newCompleted = !task.completed;
+            const updateData = {
+                completed: newCompleted,
+                completed_at: newCompleted ? new Date().toISOString() : null,
+                completed_by: newCompleted ? this.currentUser.id : null
+            };
+
+            const { error } = await supabase
+                .from('tasks')
+                .update(updateData)
+                .eq('id', id);
+
+            if (error) {
+                console.error('Error toggling task:', error);
+                alert('Failed to update task. Please try again.');
+                return;
             }
-            this.saveData();
+
+            await this.loadTasks(this.currentChecklist);
             this.renderChecklist();
             this.updateStats();
         }
     }
 
-    updateTaskValue(id, value) {
-        const { owner, name } = this.currentChecklist;
-        const item = this.data.checklists[owner][name].find(item => item.id === id);
+    async updateTaskValue(id, value) {
+        const task = this.tasks.find(t => t.id === id);
 
-        if (item && (item.type === 'temperature' || item.type === 'text')) {
-            item.value = value;
-            if (value && value.trim() !== '') {
-                item.completedAt = new Date().toISOString();
-                item.completedBy = this.currentUser.username;
-            } else {
-                item.completedAt = null;
-                item.completedBy = null;
+        if (task && (task.type === 'temperature' || task.type === 'text')) {
+            const hasValue = value && value.trim() !== '';
+            const updateData = {
+                value: value,
+                completed_at: hasValue ? new Date().toISOString() : null,
+                completed_by: hasValue ? this.currentUser.id : null
+            };
+
+            const { error } = await supabase
+                .from('tasks')
+                .update(updateData)
+                .eq('id', id);
+
+            if (error) {
+                console.error('Error updating task value:', error);
+                return;
             }
-            this.saveData();
+
+            await this.loadTasks(this.currentChecklist);
             this.updateStats();
         }
     }
 
-    updateTaskComment(id, comment) {
-        const { owner, name } = this.currentChecklist;
-        const item = this.data.checklists[owner][name].find(item => item.id === id);
+    async updateTaskComment(id, comment) {
+        const { error } = await supabase
+            .from('tasks')
+            .update({ comment })
+            .eq('id', id);
 
-        if (item) {
-            item.comment = comment;
-            this.saveData();
+        if (error) {
+            console.error('Error updating task comment:', error);
+            return;
+        }
+
+        // Update local cache without reloading
+        const task = this.tasks.find(t => t.id === id);
+        if (task) {
+            task.comment = comment;
         }
     }
 
@@ -465,10 +597,7 @@ class KitchenListsApp {
             return;
         }
 
-        const { owner, name } = this.currentChecklist;
-        const items = this.data.checklists[owner][name] || [];
-
-        if (items.length === 0) {
+        if (this.tasks.length === 0) {
             container.innerHTML = `
                 <div class="empty-state">
                     <p>📝 No tasks yet!</p>
@@ -480,24 +609,21 @@ class KitchenListsApp {
 
         const isManagerOrAdmin = this.currentUser.role === 'admin' || this.currentUser.role === 'manager';
 
-        container.innerHTML = items.map(item => {
-            // Ensure backward compatibility - if item doesn't have type, assume checkbox
-            if (!item.type) {
-                item.type = 'checkbox';
-            }
-
+        container.innerHTML = this.tasks.map(item => {
             let timestampHTML = '';
             const hasValue = item.type === 'checkbox' ? item.completed : (item.value && item.value.trim() !== '');
 
-            if (hasValue && item.completedAt) {
-                const date = new Date(item.completedAt);
+            if (hasValue && item.completed_at) {
+                const date = new Date(item.completed_at);
                 const timeStr = date.toLocaleString('en-US', {
                     month: 'short',
                     day: 'numeric',
                     hour: 'numeric',
                     minute: '2-digit'
                 });
-                timestampHTML = `<span class="task-timestamp">✓ ${timeStr} by ${item.completedBy}</span>`;
+                const completedByUser = this.users.find(u => u.id === item.completed_by);
+                const completedByName = completedByUser?.username || 'Unknown';
+                timestampHTML = `<span class="task-timestamp">✓ ${timeStr} by ${completedByName}</span>`;
             }
 
             let taskInputHTML = '';
@@ -508,7 +634,7 @@ class KitchenListsApp {
                         type="checkbox"
                         id="item-${item.id}"
                         ${item.completed ? 'checked' : ''}
-                        onchange="app.toggleItem(${item.id})"
+                        onchange="app.toggleItem('${item.id}')"
                     />
                     <label for="item-${item.id}">
                         ${this.escapeHtml(item.text)}
@@ -524,8 +650,8 @@ class KitchenListsApp {
                             class="task-input temperature"
                             value="${item.value || ''}"
                             placeholder="°F"
-                            onchange="app.updateTaskValue(${item.id}, this.value)"
-                            onblur="app.updateTaskValue(${item.id}, this.value)"
+                            onchange="app.updateTaskValue('${item.id}', this.value)"
+                            onblur="app.updateTaskValue('${item.id}', this.value)"
                         />
                         <span class="task-label">°F</span>
                         ${timestampHTML}
@@ -540,8 +666,8 @@ class KitchenListsApp {
                             class="task-input text"
                             value="${this.escapeHtml(item.value || '')}"
                             placeholder="Enter value..."
-                            onchange="app.updateTaskValue(${item.id}, this.value)"
-                            onblur="app.updateTaskValue(${item.id}, this.value)"
+                            onchange="app.updateTaskValue('${item.id}', this.value)"
+                            onblur="app.updateTaskValue('${item.id}', this.value)"
                         />
                         ${timestampHTML}
                     </span>
@@ -549,7 +675,7 @@ class KitchenListsApp {
             }
 
             const deleteButtonHTML = isManagerOrAdmin ?
-                `<button class="delete-btn" onclick="app.deleteItem(${item.id})">Delete</button>` : '';
+                `<button class="delete-btn" onclick="app.deleteItem('${item.id}')">Delete</button>` : '';
 
             const commentHTML = `
                 <div class="task-comment-section">
@@ -558,8 +684,8 @@ class KitchenListsApp {
                         class="task-comment-input"
                         value="${this.escapeHtml(item.comment || '')}"
                         placeholder="Add comment..."
-                        onchange="app.updateTaskComment(${item.id}, this.value)"
-                        onblur="app.updateTaskComment(${item.id}, this.value)"
+                        onchange="app.updateTaskComment('${item.id}', this.value)"
+                        onblur="app.updateTaskComment('${item.id}', this.value)"
                     />
                 </div>
             `;
@@ -580,16 +706,13 @@ class KitchenListsApp {
             return;
         }
 
-        const { owner, name } = this.currentChecklist;
-        const items = this.data.checklists[owner][name] || [];
-        const total = items.length;
+        const total = this.tasks.length;
 
         // Count completed based on task type
-        const completed = items.filter(item => {
-            if (!item.type || item.type === 'checkbox') {
+        const completed = this.tasks.filter(item => {
+            if (item.type === 'checkbox') {
                 return item.completed;
             } else {
-                // For temperature and text inputs, consider completed if value is filled
                 return item.value && item.value.trim() !== '';
             }
         }).length;
@@ -604,9 +727,13 @@ class KitchenListsApp {
         }
     }
 
-    // User Management
-    openUserModal() {
+    // ============================================
+    // USER MANAGEMENT
+    // ============================================
+
+    async openUserModal() {
         document.getElementById('userModal').style.display = 'flex';
+        await this.loadUsers();
         this.renderUserList();
     }
 
@@ -614,7 +741,7 @@ class KitchenListsApp {
         document.getElementById('userModal').style.display = 'none';
     }
 
-    addUser() {
+    async addUser() {
         const usernameInput = document.getElementById('newUsername');
         const username = usernameInput.value.trim();
         const role = document.getElementById('newUserRole').value;
@@ -625,7 +752,7 @@ class KitchenListsApp {
             return;
         }
 
-        if (this.data.users.find(u => u.username === username)) {
+        if (this.users.find(u => u.username === username)) {
             alert('A user with this name already exists!');
             return;
         }
@@ -642,8 +769,17 @@ class KitchenListsApp {
             newUser.password = password;
         }
 
-        this.data.users.push(newUser);
-        this.saveData();
+        const { error } = await supabase
+            .from('users')
+            .insert([newUser]);
+
+        if (error) {
+            console.error('Error adding user:', error);
+            alert('Failed to add user. Please try again.');
+            return;
+        }
+
+        await this.loadUsers();
         this.renderUserList();
         this.populateUserSelect();
         this.populateEmployeeSelect();
@@ -655,28 +791,38 @@ class KitchenListsApp {
         document.getElementById('newUserRole').value = 'employee';
     }
 
-    deleteUser(username) {
-        if (username === this.currentUser.username) {
+    async deleteUser(userId) {
+        if (userId === this.currentUser.id) {
             alert('You cannot delete yourself!');
             return;
         }
 
-        const user = this.data.users.find(u => u.username === username);
+        const user = this.users.find(u => u.id === userId);
         if (user.role === 'admin') {
             alert('Cannot delete admin accounts!');
             return;
         }
 
         const userType = user.role === 'manager' ? 'manager' : 'employee';
-        if (confirm(`Are you sure you want to delete ${userType} "${username}"? This will also delete all their checklists.`)) {
-            this.data.users = this.data.users.filter(u => u.username !== username);
-            delete this.data.checklists[username];
-            this.saveData();
+        if (confirm(`Are you sure you want to delete ${userType} "${user.username}"? This will also delete all their checklists.`)) {
+            const { error } = await supabase
+                .from('users')
+                .delete()
+                .eq('id', userId);
+
+            if (error) {
+                console.error('Error deleting user:', error);
+                alert('Failed to delete user. Please try again.');
+                return;
+            }
+
+            await this.loadUsers();
             this.renderUserList();
             this.populateUserSelect();
             this.populateEmployeeSelect();
 
             if (this.viewMode === 'employeeLists') {
+                await this.loadChecklists();
                 this.renderChecklistTabs();
             }
         }
@@ -686,7 +832,7 @@ class KitchenListsApp {
         const container = document.getElementById('userList');
 
         // Show all users except admins
-        const nonAdminUsers = this.data.users.filter(u => u.role !== 'admin');
+        const nonAdminUsers = this.users.filter(u => u.role !== 'admin');
 
         if (nonAdminUsers.length === 0) {
             container.innerHTML = '<p style="color: #999; text-align: center;">No users yet</p>';
@@ -699,32 +845,22 @@ class KitchenListsApp {
                     <span>${this.escapeHtml(user.username)}</span>
                     <span class="user-role-badge ${user.role}">${user.role}</span>
                 </div>
-                <button class="delete-user-btn" onclick="app.deleteUser('${this.escapeHtml(user.username)}')">Delete</button>
+                <button class="delete-user-btn" onclick="app.deleteUser('${user.id}')">Delete</button>
             </div>
         `).join('');
     }
 
-    // Data Management
-    saveData() {
-        localStorage.setItem('kitchenListsData', JSON.stringify(this.data));
-    }
-
-    loadData() {
-        const saved = localStorage.getItem('kitchenListsData');
-        if (saved) {
-            return JSON.parse(saved);
-        }
-        return {
-            users: [],
-            checklists: {}
-        };
-    }
+    // ============================================
+    // UTILITIES
+    // ============================================
 
     escapeHtml(text) {
+        if (!text) return '';
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
     }
 }
 
+// Initialize app
 const app = new KitchenListsApp();
