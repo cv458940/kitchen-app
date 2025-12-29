@@ -167,6 +167,29 @@ class KitchenListsApp {
 
         this.viewMode = 'myLists';
         this.renderChecklistTabs();
+        this.updateUIPermissions();
+    }
+
+    updateUIPermissions() {
+        const isManagerOrAdmin = this.currentUser.role === 'admin' || this.currentUser.role === 'manager';
+
+        // Show/hide task creation section
+        const addItemSection = document.querySelector('.add-item-section');
+        if (addItemSection) {
+            addItemSection.style.display = isManagerOrAdmin ? 'flex' : 'none';
+        }
+
+        // Show/hide checklist creation section
+        const checklistManager = document.querySelector('.checklist-manager');
+        if (checklistManager) {
+            checklistManager.style.display = isManagerOrAdmin ? 'block' : 'none';
+        }
+
+        // Show/hide delete checklist button
+        const deleteChecklistBtn = document.getElementById('deleteChecklistBtn');
+        if (deleteChecklistBtn && !isManagerOrAdmin) {
+            deleteChecklistBtn.style.display = 'none';
+        }
     }
 
     logout() {
@@ -329,10 +352,12 @@ class KitchenListsApp {
         this.currentChecklist = { owner, name };
         document.getElementById('currentChecklistName').textContent =
             this.viewMode === 'employeeLists' ? `${owner} - ${name}` : name;
-        document.getElementById('deleteChecklistBtn').style.display = 'inline-block';
+        const isManagerOrAdmin = this.currentUser.role === 'admin' || this.currentUser.role === 'manager';
+        document.getElementById('deleteChecklistBtn').style.display = isManagerOrAdmin ? 'inline-block' : 'none';
         this.renderChecklistTabs();
         this.renderChecklist();
         this.updateStats();
+        this.updateUIPermissions();
     }
 
     addItem() {
@@ -343,6 +368,7 @@ class KitchenListsApp {
 
         const input = document.getElementById('newItemInput');
         const text = input.value.trim();
+        const taskType = document.getElementById('taskTypeSelect').value;
 
         if (text === '') {
             alert('Please enter a task!');
@@ -354,9 +380,12 @@ class KitchenListsApp {
         const newItem = {
             id: Date.now(),
             text: text,
-            completed: false,
+            type: taskType, // 'checkbox', 'temperature', or 'text'
+            value: null, // For temperature and text inputs
+            completed: false, // For checkboxes
             completedAt: null,
-            completedBy: null
+            completedBy: null,
+            comment: '' // Comments for any task
         };
 
         this.data.checklists[owner][name].push(newItem);
@@ -381,7 +410,7 @@ class KitchenListsApp {
         const { owner, name } = this.currentChecklist;
         const item = this.data.checklists[owner][name].find(item => item.id === id);
 
-        if (item) {
+        if (item && item.type === 'checkbox') {
             item.completed = !item.completed;
             if (item.completed) {
                 item.completedAt = new Date().toISOString();
@@ -393,6 +422,34 @@ class KitchenListsApp {
             this.saveData();
             this.renderChecklist();
             this.updateStats();
+        }
+    }
+
+    updateTaskValue(id, value) {
+        const { owner, name } = this.currentChecklist;
+        const item = this.data.checklists[owner][name].find(item => item.id === id);
+
+        if (item && (item.type === 'temperature' || item.type === 'text')) {
+            item.value = value;
+            if (value && value.trim() !== '') {
+                item.completedAt = new Date().toISOString();
+                item.completedBy = this.currentUser.username;
+            } else {
+                item.completedAt = null;
+                item.completedBy = null;
+            }
+            this.saveData();
+            this.updateStats();
+        }
+    }
+
+    updateTaskComment(id, comment) {
+        const { owner, name } = this.currentChecklist;
+        const item = this.data.checklists[owner][name].find(item => item.id === id);
+
+        if (item) {
+            item.comment = comment;
+            this.saveData();
         }
     }
 
@@ -421,9 +478,18 @@ class KitchenListsApp {
             return;
         }
 
+        const isManagerOrAdmin = this.currentUser.role === 'admin' || this.currentUser.role === 'manager';
+
         container.innerHTML = items.map(item => {
+            // Ensure backward compatibility - if item doesn't have type, assume checkbox
+            if (!item.type) {
+                item.type = 'checkbox';
+            }
+
             let timestampHTML = '';
-            if (item.completed && item.completedAt) {
+            const hasValue = item.type === 'checkbox' ? item.completed : (item.value && item.value.trim() !== '');
+
+            if (hasValue && item.completedAt) {
                 const date = new Date(item.completedAt);
                 const timeStr = date.toLocaleString('en-US', {
                     month: 'short',
@@ -434,8 +500,10 @@ class KitchenListsApp {
                 timestampHTML = `<span class="task-timestamp">✓ ${timeStr} by ${item.completedBy}</span>`;
             }
 
-            return `
-                <div class="checklist-item ${item.completed ? 'completed' : ''}">
+            let taskInputHTML = '';
+
+            if (item.type === 'checkbox') {
+                taskInputHTML = `
                     <input
                         type="checkbox"
                         id="item-${item.id}"
@@ -446,8 +514,62 @@ class KitchenListsApp {
                         ${this.escapeHtml(item.text)}
                         ${timestampHTML}
                     </label>
-                    <button class="delete-btn" onclick="app.deleteItem(${item.id})">Delete</button>
+                `;
+            } else if (item.type === 'temperature') {
+                taskInputHTML = `
+                    <span style="flex: 1;">
+                        ${this.escapeHtml(item.text)}:
+                        <input
+                            type="number"
+                            class="task-input temperature"
+                            value="${item.value || ''}"
+                            placeholder="°F"
+                            onchange="app.updateTaskValue(${item.id}, this.value)"
+                            onblur="app.updateTaskValue(${item.id}, this.value)"
+                        />
+                        <span class="task-label">°F</span>
+                        ${timestampHTML}
+                    </span>
+                `;
+            } else if (item.type === 'text') {
+                taskInputHTML = `
+                    <span style="flex: 1;">
+                        ${this.escapeHtml(item.text)}:
+                        <input
+                            type="text"
+                            class="task-input text"
+                            value="${this.escapeHtml(item.value || '')}"
+                            placeholder="Enter value..."
+                            onchange="app.updateTaskValue(${item.id}, this.value)"
+                            onblur="app.updateTaskValue(${item.id}, this.value)"
+                        />
+                        ${timestampHTML}
+                    </span>
+                `;
+            }
+
+            const deleteButtonHTML = isManagerOrAdmin ?
+                `<button class="delete-btn" onclick="app.deleteItem(${item.id})">Delete</button>` : '';
+
+            const commentHTML = `
+                <div class="task-comment-section">
+                    <input
+                        type="text"
+                        class="task-comment-input"
+                        value="${this.escapeHtml(item.comment || '')}"
+                        placeholder="Add comment..."
+                        onchange="app.updateTaskComment(${item.id}, this.value)"
+                        onblur="app.updateTaskComment(${item.id}, this.value)"
+                    />
                 </div>
+            `;
+
+            return `
+                <div class="checklist-item ${item.completed ? 'completed' : ''}">
+                    ${taskInputHTML}
+                    ${deleteButtonHTML}
+                </div>
+                ${commentHTML}
             `;
         }).join('');
     }
@@ -461,7 +583,17 @@ class KitchenListsApp {
         const { owner, name } = this.currentChecklist;
         const items = this.data.checklists[owner][name] || [];
         const total = items.length;
-        const completed = items.filter(item => item.completed).length;
+
+        // Count completed based on task type
+        const completed = items.filter(item => {
+            if (!item.type || item.type === 'checkbox') {
+                return item.completed;
+            } else {
+                // For temperature and text inputs, consider completed if value is filled
+                return item.value && item.value.trim() !== '';
+            }
+        }).length;
+
         const remaining = total - completed;
 
         const statsText = document.getElementById('statsText');

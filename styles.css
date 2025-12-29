@@ -166,6 +166,22 @@ header h1 {
     display: flex;
     gap: 10px;
     margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+
+.task-type-select {
+    padding: 12px 15px;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    font-size: 1rem;
+    background: white;
+    cursor: pointer;
+    transition: border-color 0.3s ease;
+}
+
+.task-type-select:focus {
+    outline: none;
+    border-color: #667eea;
 }
 
 #newItemInput {
@@ -694,6 +710,72 @@ header h1 {
     font-size: 0.8rem;
     color: #999;
     margin-left: 10px;
+}
+
+.task-input {
+    padding: 8px 12px;
+    border: 2px solid #e0e0e0;
+    border-radius: 6px;
+    font-size: 0.95rem;
+    min-width: 100px;
+    transition: border-color 0.3s ease;
+}
+
+.task-input:focus {
+    outline: none;
+    border-color: #667eea;
+}
+
+.task-input.temperature {
+    width: 80px;
+}
+
+.task-input.text {
+    min-width: 150px;
+}
+
+.task-value-display {
+    font-weight: bold;
+    color: #667eea;
+    margin-left: 10px;
+}
+
+.task-comment-section {
+    margin-top: 8px;
+    padding-left: 35px;
+}
+
+.task-comment-input {
+    width: 100%;
+    padding: 6px 10px;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    font-style: italic;
+    color: #666;
+}
+
+.task-comment-input:focus {
+    outline: none;
+    border-color: #667eea;
+}
+
+.task-comment-display {
+    font-size: 0.85rem;
+    color: #666;
+    font-style: italic;
+    padding: 6px 10px;
+    background: #f9f9f9;
+    border-radius: 4px;
+    border-left: 3px solid #667eea;
+}
+
+.task-label {
+    font-size: 0.75rem;
+    color: #999;
+    text-transform: uppercase;
+    font-weight: bold;
+    margin-right: 8px;
 }
 
 @media (max-width: 600px) {
