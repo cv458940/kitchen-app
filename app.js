@@ -8,6 +8,7 @@ class KitchenListsApp {
         this.currentUser = null;
         this.currentChecklist = null;
         this.selectedEmployee = 'all';
+        this.currentView = 'dashboard'; // 'dashboard' or 'checklists'
         this.users = [];
         this.checklists = [];
         this.tasks = [];
@@ -54,6 +55,8 @@ class KitchenListsApp {
         document.getElementById('deleteChecklistBtn').addEventListener('click', () => this.deleteChecklist());
 
         // Manager controls
+        document.getElementById('dashboardBtn').addEventListener('click', () => this.showDashboard());
+        document.getElementById('checklistsBtn').addEventListener('click', () => this.showChecklists());
         document.getElementById('manageUsersBtn').addEventListener('click', () => this.openUserModal());
 
         // Employee filter
@@ -213,16 +216,14 @@ class KitchenListsApp {
         // Show manager controls if admin or manager
         if (this.currentUser.role === 'admin' || this.currentUser.role === 'manager') {
             document.getElementById('managerControls').style.display = 'block';
-            document.getElementById('employeeFilter').style.display = 'flex';
             this.populateEmployeeSelect();
+            // Show dashboard for managers/admins
+            await this.showDashboard();
         } else {
             document.getElementById('managerControls').style.display = 'none';
-            document.getElementById('employeeFilter').style.display = 'none';
+            // Show checklists for employees
+            await this.showChecklists();
         }
-
-        await this.loadChecklists();
-        this.renderChecklistTabs();
-        this.updateUIPermissions();
     }
 
     updateUIPermissions() {
@@ -251,9 +252,199 @@ class KitchenListsApp {
         this.currentUser = null;
         this.currentChecklist = null;
         this.selectedEmployee = 'all';
+        this.currentView = 'dashboard';
         this.checklists = [];
         this.tasks = [];
         this.showLoginScreen();
+    }
+
+    // ============================================
+    // VIEW SWITCHING
+    // ============================================
+
+    async showDashboard() {
+        this.currentView = 'dashboard';
+
+        // Update button states
+        document.getElementById('dashboardBtn').classList.add('active');
+        document.getElementById('checklistsBtn').classList.remove('active');
+
+        // Hide checklist view, show dashboard
+        document.getElementById('checklistManagementView').style.display = 'none';
+        document.getElementById('dashboardView').style.display = 'block';
+
+        // Load and render dashboard data
+        await this.loadChecklists();
+        await this.loadAllTasks();
+        this.renderDashboard();
+    }
+
+    async showChecklists() {
+        this.currentView = 'checklists';
+
+        // Update button states (only for managers/admins)
+        if (this.currentUser.role === 'admin' || this.currentUser.role === 'manager') {
+            document.getElementById('dashboardBtn').classList.remove('active');
+            document.getElementById('checklistsBtn').classList.add('active');
+        }
+
+        // Show checklist view, hide dashboard
+        document.getElementById('dashboardView').style.display = 'none';
+        document.getElementById('checklistManagementView').style.display = 'block';
+
+        // Show employee filter for managers/admins
+        if (this.currentUser.role === 'admin' || this.currentUser.role === 'manager') {
+            document.getElementById('employeeFilter').style.display = 'flex';
+        }
+
+        await this.loadChecklists();
+        this.renderChecklistTabs();
+        this.updateUIPermissions();
+    }
+
+    // ============================================
+    // DASHBOARD
+    // ============================================
+
+    async loadAllTasks() {
+        // Load all tasks for all checklists
+        const { data, error } = await supabaseClient
+            .from('tasks')
+            .select('*');
+
+        if (error) {
+            console.error('Error loading all tasks:', error);
+            this.tasks = [];
+        } else {
+            this.tasks = data || [];
+        }
+    }
+
+    renderDashboard() {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        // Calculate stats
+        const totalChecklists = this.checklists.length;
+
+        // Count checklists that have all tasks completed today
+        const checklistCompletionStatus = this.checklists.map(checklist => {
+            const checklistTasks = this.tasks.filter(t => t.checklist_id === checklist.id);
+            if (checklistTasks.length === 0) return { checklist, allCompleted: false, completedToday: false };
+
+            const allCompleted = checklistTasks.every(task => {
+                if (task.type === 'checkbox') {
+                    return task.completed;
+                } else {
+                    return task.value && task.value.trim() !== '';
+                }
+            });
+
+            const completedToday = checklistTasks.every(task => {
+                if (!task.completed_at) return false;
+                const completedDate = new Date(task.completed_at);
+                completedDate.setHours(0, 0, 0, 0);
+                return completedDate.getTime() === today.getTime();
+            });
+
+            return { checklist, allCompleted: allCompleted && completedToday, completedToday };
+        });
+
+        const completedChecklistsToday = checklistCompletionStatus.filter(cs => cs.allCompleted).length;
+        const completionPercentage = totalChecklists > 0
+            ? Math.round((completedChecklistsToday / totalChecklists) * 100)
+            : 0;
+
+        // Count tasks completed today
+        const tasksCompletedToday = this.tasks.filter(task => {
+            if (!task.completed_at) return false;
+            const completedDate = new Date(task.completed_at);
+            completedDate.setHours(0, 0, 0, 0);
+            return completedDate.getTime() === today.getTime();
+        }).length;
+
+        // Update stat cards
+        document.getElementById('totalChecklistsCount').textContent = totalChecklists;
+        document.getElementById('completedChecklistsCount').textContent = completedChecklistsToday;
+        document.getElementById('completionPercentage').textContent = `${completionPercentage}%`;
+        document.getElementById('totalTasksCompletedCount').textContent = tasksCompletedToday;
+
+        // Render user completion stats
+        this.renderUserCompletionStats(today);
+    }
+
+    renderUserCompletionStats(today) {
+        const container = document.getElementById('userCompletionStats');
+
+        // Get all users who have checklists
+        const usersWithChecklists = this.users.filter(user =>
+            this.checklists.some(c => c.owner_id === user.id)
+        );
+
+        if (usersWithChecklists.length === 0) {
+            container.innerHTML = '<p style="color: #999; text-align: center;">No checklist data available</p>';
+            return;
+        }
+
+        container.innerHTML = usersWithChecklists.map(user => {
+            const userChecklists = this.checklists.filter(c => c.owner_id === user.id);
+            let completedCount = 0;
+            let totalTasks = 0;
+            let completedTasks = 0;
+
+            userChecklists.forEach(checklist => {
+                const checklistTasks = this.tasks.filter(t => t.checklist_id === checklist.id);
+                totalTasks += checklistTasks.length;
+
+                if (checklistTasks.length > 0) {
+                    const allCompleted = checklistTasks.every(task => {
+                        if (task.type === 'checkbox') {
+                            return task.completed;
+                        } else {
+                            return task.value && task.value.trim() !== '';
+                        }
+                    });
+
+                    const completedToday = checklistTasks.every(task => {
+                        if (!task.completed_at) return false;
+                        const completedDate = new Date(task.completed_at);
+                        completedDate.setHours(0, 0, 0, 0);
+                        return completedDate.getTime() === today.getTime();
+                    });
+
+                    if (allCompleted && completedToday) {
+                        completedCount++;
+                    }
+                }
+
+                // Count individual tasks completed today
+                completedTasks += checklistTasks.filter(task => {
+                    if (!task.completed_at) return false;
+                    const completedDate = new Date(task.completed_at);
+                    completedDate.setHours(0, 0, 0, 0);
+                    return completedDate.getTime() === today.getTime();
+                }).length;
+            });
+
+            const percentage = userChecklists.length > 0
+                ? Math.round((completedCount / userChecklists.length) * 100)
+                : 0;
+
+            return `
+                <div class="user-stat-row">
+                    <div class="user-stat-info">
+                        <span class="user-stat-name">${this.escapeHtml(user.username)}</span>
+                        <span class="user-role-badge ${user.role}">${user.role}</span>
+                    </div>
+                    <div class="user-stat-progress">
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: ${percentage}%"></div>
+                        </div>
+                        <span class="progress-text">${completedCount}/${userChecklists.length} checklists (${completedTasks} tasks)</span>
+                    </div>
+                </div>
+            `;
+        }).join('');
     }
 
     // ============================================
