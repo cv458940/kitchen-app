@@ -7,11 +7,11 @@ class KitchenListsApp {
     constructor() {
         this.currentUser = null;
         this.currentChecklist = null;
-        this.selectedEmployee = 'all';
         this.currentView = 'dashboard'; // 'dashboard' or 'checklists'
         this.users = [];
         this.checklists = [];
         this.tasks = [];
+        this.lastResetDate = null;
         this.init();
     }
 
@@ -19,11 +19,44 @@ class KitchenListsApp {
         try {
             // Load initial data
             await this.loadUsers();
+            await this.checkAndResetDaily();
             this.setupEventListeners();
             this.showLoginScreen();
         } catch (error) {
             console.error('Initialization error:', error);
             alert('Failed to initialize app. Please refresh the page.');
+        }
+    }
+
+    async checkAndResetDaily() {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const todayStr = today.toISOString().split('T')[0];
+
+        // Check localStorage for last reset date
+        const lastReset = localStorage.getItem('lastResetDate');
+
+        if (lastReset !== todayStr) {
+            // It's a new day, reset all tasks
+            console.log('New day detected, resetting all tasks...');
+            await this.resetAllTasks();
+            localStorage.setItem('lastResetDate', todayStr);
+        }
+    }
+
+    async resetAllTasks() {
+        const { error } = await supabaseClient
+            .from('tasks')
+            .update({
+                completed: false,
+                value: null,
+                completed_at: null,
+                completed_by: null
+            })
+            .neq('id', '00000000-0000-0000-0000-000000000000'); // Update all tasks
+
+        if (error) {
+            console.error('Error resetting tasks:', error);
         }
     }
 
@@ -58,14 +91,6 @@ class KitchenListsApp {
         document.getElementById('dashboardBtn').addEventListener('click', () => this.showDashboard());
         document.getElementById('checklistsBtn').addEventListener('click', () => this.showChecklists());
         document.getElementById('manageUsersBtn').addEventListener('click', () => this.openUserModal());
-
-        // Employee filter
-        document.getElementById('employeeSelect').addEventListener('change', (e) => {
-            this.selectedEmployee = e.target.value;
-            this.renderChecklistTabs();
-            this.currentChecklist = null;
-            this.renderChecklist();
-        });
 
         // User management modal
         document.getElementById('closeModalBtn').addEventListener('click', () => this.closeUserModal());
@@ -216,7 +241,6 @@ class KitchenListsApp {
         // Show manager controls if admin or manager
         if (this.currentUser.role === 'admin' || this.currentUser.role === 'manager') {
             document.getElementById('managerControls').style.display = 'block';
-            this.populateEmployeeSelect();
             // Show dashboard for managers/admins
             await this.showDashboard();
         } else {
@@ -251,7 +275,6 @@ class KitchenListsApp {
     logout() {
         this.currentUser = null;
         this.currentChecklist = null;
-        this.selectedEmployee = 'all';
         this.currentView = 'dashboard';
         this.checklists = [];
         this.tasks = [];
@@ -291,11 +314,6 @@ class KitchenListsApp {
         // Show checklist view, hide dashboard
         document.getElementById('dashboardView').style.display = 'none';
         document.getElementById('checklistManagementView').style.display = 'block';
-
-        // Show employee filter for managers/admins
-        if (this.currentUser.role === 'admin' || this.currentUser.role === 'manager') {
-            document.getElementById('employeeFilter').style.display = 'flex';
-        }
 
         await this.loadChecklists();
         this.renderChecklistTabs();
@@ -376,100 +394,104 @@ class KitchenListsApp {
     renderUserCompletionStats(today) {
         const container = document.getElementById('userCompletionStats');
 
-        // Get all users who have checklists
-        const usersWithChecklists = this.users.filter(user =>
-            this.checklists.some(c => c.owner_id === user.id)
-        );
-
-        if (usersWithChecklists.length === 0) {
-            container.innerHTML = '<p style="color: #999; text-align: center;">No checklist data available</p>';
+        if (this.checklists.length === 0) {
+            container.innerHTML = '<p style="color: #999; text-align: center;">No checklists available</p>';
             return;
         }
 
-        container.innerHTML = usersWithChecklists.map(user => {
-            const userChecklists = this.checklists.filter(c => c.owner_id === user.id);
-            let completedCount = 0;
-            let totalTasks = 0;
-            let completedTasks = 0;
+        // Build completion data for each checklist
+        const checklistData = this.checklists.map(checklist => {
+            const checklistTasks = this.tasks.filter(t => t.checklist_id === checklist.id);
 
-            userChecklists.forEach(checklist => {
-                const checklistTasks = this.tasks.filter(t => t.checklist_id === checklist.id);
-                totalTasks += checklistTasks.length;
+            if (checklistTasks.length === 0) {
+                return { checklist, completed: false, contributors: [], totalTasks: 0, completedTasks: 0 };
+            }
 
-                if (checklistTasks.length > 0) {
-                    const allCompleted = checklistTasks.every(task => {
-                        if (task.type === 'checkbox') {
-                            return task.completed;
-                        } else {
-                            return task.value && task.value.trim() !== '';
-                        }
-                    });
-
-                    const completedToday = checklistTasks.every(task => {
-                        if (!task.completed_at) return false;
-                        const completedDate = new Date(task.completed_at);
-                        completedDate.setHours(0, 0, 0, 0);
-                        return completedDate.getTime() === today.getTime();
-                    });
-
-                    if (allCompleted && completedToday) {
-                        completedCount++;
-                    }
+            const allCompleted = checklistTasks.every(task => {
+                if (task.type === 'checkbox') {
+                    return task.completed;
+                } else {
+                    return task.value && task.value.trim() !== '';
                 }
-
-                // Count individual tasks completed today
-                completedTasks += checklistTasks.filter(task => {
-                    if (!task.completed_at) return false;
-                    const completedDate = new Date(task.completed_at);
-                    completedDate.setHours(0, 0, 0, 0);
-                    return completedDate.getTime() === today.getTime();
-                }).length;
             });
 
-            const percentage = userChecklists.length > 0
-                ? Math.round((completedCount / userChecklists.length) * 100)
+            const completedToday = checklistTasks.every(task => {
+                if (!task.completed_at) return false;
+                const completedDate = new Date(task.completed_at);
+                completedDate.setHours(0, 0, 0, 0);
+                return completedDate.getTime() === today.getTime();
+            });
+
+            // Get unique contributors who completed tasks today
+            const contributorIds = new Set();
+            checklistTasks.forEach(task => {
+                if (task.completed_at) {
+                    const completedDate = new Date(task.completed_at);
+                    completedDate.setHours(0, 0, 0, 0);
+                    if (completedDate.getTime() === today.getTime() && task.completed_by) {
+                        contributorIds.add(task.completed_by);
+                    }
+                }
+            });
+
+            const contributors = Array.from(contributorIds).map(id =>
+                this.users.find(u => u.id === id)
+            ).filter(u => u);
+
+            const completedTasksToday = checklistTasks.filter(task => {
+                if (!task.completed_at) return false;
+                const completedDate = new Date(task.completed_at);
+                completedDate.setHours(0, 0, 0, 0);
+                return completedDate.getTime() === today.getTime();
+            }).length;
+
+            return {
+                checklist,
+                completed: allCompleted && completedToday,
+                contributors,
+                totalTasks: checklistTasks.length,
+                completedTasks: completedTasksToday
+            };
+        });
+
+        // Sort: completed first, then by name
+        checklistData.sort((a, b) => {
+            if (a.completed !== b.completed) return a.completed ? -1 : 1;
+            return a.checklist.name.localeCompare(b.checklist.name);
+        });
+
+        container.innerHTML = checklistData.map(data => {
+            const percentage = data.totalTasks > 0
+                ? Math.round((data.completedTasks / data.totalTasks) * 100)
                 : 0;
 
+            const completionBadge = data.completed
+                ? '<span class="completion-badge complete">✓ Complete</span>'
+                : `<span class="completion-badge incomplete">${data.completedTasks}/${data.totalTasks} tasks</span>`;
+
+            const contributorsList = data.contributors.length > 0
+                ? data.contributors.map(u => `<span class="contributor-badge">${this.escapeHtml(u.username)}</span>`).join(' ')
+                : '<span class="no-contributors">No activity today</span>';
+
             return `
-                <div class="user-stat-row">
-                    <div class="user-stat-info">
-                        <span class="user-stat-name">${this.escapeHtml(user.username)}</span>
-                        <span class="user-role-badge ${user.role}">${user.role}</span>
+                <div class="checklist-stat-row ${data.completed ? 'completed' : ''}">
+                    <div class="checklist-stat-header">
+                        <span class="checklist-stat-name">${this.escapeHtml(data.checklist.name)}</span>
+                        ${completionBadge}
                     </div>
-                    <div class="user-stat-progress">
+                    <div class="checklist-stat-progress">
                         <div class="progress-bar">
                             <div class="progress-fill" style="width: ${percentage}%"></div>
                         </div>
-                        <span class="progress-text">${completedCount}/${userChecklists.length} checklists (${completedTasks} tasks)</span>
+                        <span class="progress-percentage">${percentage}%</span>
+                    </div>
+                    <div class="checklist-contributors">
+                        <span class="contributors-label">Completed by:</span>
+                        ${contributorsList}
                     </div>
                 </div>
             `;
         }).join('');
-    }
-
-    // ============================================
-    // EMPLOYEE FILTER
-    // ============================================
-
-    populateEmployeeSelect() {
-        const select = document.getElementById('employeeSelect');
-        select.innerHTML = '<option value="all">All</option>';
-
-        // Add current user (manager/admin) as first option
-        const myOption = document.createElement('option');
-        myOption.value = this.currentUser.id;
-        myOption.textContent = `${this.currentUser.username} (Me)`;
-        select.appendChild(myOption);
-
-        // Add all employees
-        this.users
-            .filter(u => u.role === 'employee')
-            .forEach(user => {
-                const option = document.createElement('option');
-                option.value = user.id;
-                option.textContent = user.username;
-                select.appendChild(option);
-            });
     }
 
     // ============================================
@@ -485,27 +507,18 @@ class KitchenListsApp {
             return;
         }
 
-        // Determine owner based on selected employee filter
-        let ownerId = this.currentUser.id;
-        if (this.currentUser.role === 'admin' || this.currentUser.role === 'manager') {
-            if (this.selectedEmployee !== 'all') {
-                ownerId = this.selectedEmployee;
-            }
-        }
-
         // Check if checklist already exists
-        const existing = this.checklists.find(c =>
-            c.owner_id === ownerId && c.name === name
-        );
+        const existing = this.checklists.find(c => c.name === name);
 
         if (existing) {
             alert('A checklist with this name already exists!');
             return;
         }
 
+        // Create checklist with current user as creator (for tracking only)
         const { data, error } = await supabaseClient
             .from('checklists')
-            .insert([{ name, owner_id: ownerId }])
+            .insert([{ name, owner_id: this.currentUser.id }])
             .select()
             .single();
 
@@ -562,19 +575,8 @@ class KitchenListsApp {
     }
 
     getAvailableChecklists() {
-        // For employees, show only their own checklists
-        if (this.currentUser.role === 'employee') {
-            return this.checklists.filter(c => c.owner_id === this.currentUser.id);
-        }
-
-        // For managers/admins, filter based on selected employee
-        if (this.selectedEmployee === 'all') {
-            // Show all checklists (manager's own + all employees')
-            return this.checklists;
-        } else {
-            // Show checklists for the selected user only
-            return this.checklists.filter(c => c.owner_id === this.selectedEmployee);
-        }
+        // Show all checklists to everyone
+        return this.checklists;
     }
 
     renderChecklistTabs() {
@@ -592,20 +594,13 @@ class KitchenListsApp {
 
         tabsContainer.innerHTML = checklists.map(checklist => {
             const isActive = this.currentChecklist === checklist.id;
-            const owner = this.users.find(u => u.id === checklist.owner_id);
-
-            // Always show owner name for managers/admins when viewing all or multiple users
-            const isManagerOrAdmin = this.currentUser.role === 'admin' || this.currentUser.role === 'manager';
-            const showOwner = isManagerOrAdmin && this.selectedEmployee === 'all';
-            const displayName = showOwner ?
-                `${owner?.username || 'Unknown'} - ${checklist.name}` : checklist.name;
 
             return `
                 <button
                     class="tab-button ${isActive ? 'active' : ''}"
                     onclick="app.switchChecklist('${checklist.id}')"
                 >
-                    ${this.escapeHtml(displayName)}
+                    ${this.escapeHtml(checklist.name)}
                 </button>
             `;
         }).join('');
@@ -617,14 +612,9 @@ class KitchenListsApp {
 
         if (!checklist) return;
 
-        const owner = this.users.find(u => u.id === checklist.owner_id);
-        const isManagerOrAdmin = this.currentUser.role === 'admin' || this.currentUser.role === 'manager';
-        const showOwner = isManagerOrAdmin && this.selectedEmployee === 'all';
-        const displayName = showOwner
-            ? `${owner?.username || 'Unknown'} - ${checklist.name}`
-            : checklist.name;
+        document.getElementById('currentChecklistName').textContent = checklist.name;
 
-        document.getElementById('currentChecklistName').textContent = displayName;
+        const isManagerOrAdmin = this.currentUser.role === 'admin' || this.currentUser.role === 'manager';
         document.getElementById('deleteChecklistBtn').style.display = isManagerOrAdmin ? 'inline-block' : 'none';
 
         this.renderChecklistTabs();
@@ -1007,7 +997,6 @@ class KitchenListsApp {
             await this.loadUsers();
             this.renderUserList();
             this.populateUserSelect();
-            this.populateEmployeeSelect();
 
             // Reload checklists since user's checklists were deleted
             await this.loadChecklists();

@@ -481,36 +481,6 @@ header h1 {
     transform: translateY(-2px);
 }
 
-/* Employee Filter */
-.employee-filter {
-    background: #fafafa;
-    padding: 15px 20px;
-    border-bottom: 2px solid #e0e0e0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-}
-
-.employee-filter label {
-    color: #666;
-    font-weight: 500;
-}
-
-.employee-select {
-    padding: 8px 15px;
-    border: 2px solid #e0e0e0;
-    border-radius: 6px;
-    font-size: 0.95rem;
-    cursor: pointer;
-    background: white;
-}
-
-.employee-select:focus {
-    outline: none;
-    border-color: #667eea;
-}
-
 /* Modal */
 .modal {
     position: fixed;
@@ -833,12 +803,46 @@ header h1 {
     border-radius: 12px;
 }
 
-.user-stat-row {
+.user-stat-row, .checklist-stat-row {
     background: white;
     padding: 15px;
     border-radius: 8px;
     margin-bottom: 12px;
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
+.checklist-stat-row.completed {
+    border-left: 4px solid #4caf50;
+}
+
+.checklist-stat-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.checklist-stat-name {
+    font-weight: 600;
+    color: #333;
+    font-size: 1.05rem;
+}
+
+.completion-badge {
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    font-weight: bold;
+}
+
+.completion-badge.complete {
+    background: #4caf50;
+    color: white;
+}
+
+.completion-badge.incomplete {
+    background: #e0e0e0;
+    color: #666;
 }
 
 .user-stat-info {
@@ -853,10 +857,47 @@ header h1 {
     color: #333;
 }
 
-.user-stat-progress {
+.user-stat-progress, .checklist-stat-progress {
     display: flex;
     align-items: center;
     gap: 15px;
+    margin-bottom: 12px;
+}
+
+.progress-percentage {
+    font-size: 0.9rem;
+    color: #666;
+    min-width: 45px;
+    text-align: right;
+    font-weight: 600;
+}
+
+.checklist-contributors {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.contributors-label {
+    font-size: 0.85rem;
+    color: #999;
+    font-weight: 500;
+}
+
+.contributor-badge {
+    padding: 4px 10px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.no-contributors {
+    font-size: 0.85rem;
+    color: #999;
+    font-style: italic;
 }
 
 .progress-bar {
@@ -911,7 +952,7 @@ header h1 {
         grid-template-columns: 1fr;
     }
 
-    .user-stat-progress {
+    .user-stat-progress, .checklist-stat-progress {
         flex-direction: column;
         align-items: flex-start;
         gap: 8px;
@@ -921,14 +962,19 @@ header h1 {
         width: 100%;
     }
 
-    .progress-text {
+    .progress-text, .progress-percentage {
         text-align: left;
         min-width: auto;
     }
 
-    .employee-filter {
+    .checklist-stat-header {
         flex-direction: column;
+        align-items: flex-start;
         gap: 8px;
+    }
+
+    .checklist-contributors {
+        margin-top: 8px;
     }
 
     .checklist-manager {
