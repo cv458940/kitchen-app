@@ -1,50 +1,131 @@
 class KitchenChecklistApp {
     constructor() {
-        this.currentCategory = 'cleaning';
+        this.currentChecklist = null;
         this.data = this.loadData();
         this.init();
     }
 
     init() {
         this.setupEventListeners();
-        this.renderChecklist();
-        this.updateStats();
+        this.renderChecklistTabs();
+
+        // Select first checklist if available
+        const checklistNames = Object.keys(this.data.checklists);
+        if (checklistNames.length > 0) {
+            this.switchChecklist(checklistNames[0]);
+        }
     }
 
     setupEventListeners() {
-        const addBtn = document.getElementById('addItemBtn');
+        const addItemBtn = document.getElementById('addItemBtn');
         const newItemInput = document.getElementById('newItemInput');
-        const tabButtons = document.querySelectorAll('.tab-button');
+        const addChecklistBtn = document.getElementById('addChecklistBtn');
+        const newChecklistInput = document.getElementById('newChecklistInput');
+        const deleteChecklistBtn = document.getElementById('deleteChecklistBtn');
 
-        addBtn.addEventListener('click', () => this.addItem());
+        addItemBtn.addEventListener('click', () => this.addItem());
         newItemInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
                 this.addItem();
             }
         });
 
-        tabButtons.forEach(button => {
-            button.addEventListener('click', (e) => {
-                this.switchCategory(e.target.dataset.category);
-                this.updateActiveTab(e.target);
-            });
+        addChecklistBtn.addEventListener('click', () => this.createChecklist());
+        newChecklistInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                this.createChecklist();
+            }
         });
+
+        deleteChecklistBtn.addEventListener('click', () => this.deleteChecklist());
     }
 
-    switchCategory(category) {
-        this.currentCategory = category;
+    createChecklist() {
+        const input = document.getElementById('newChecklistInput');
+        const name = input.value.trim();
+
+        if (name === '') {
+            alert('Please enter a checklist name!');
+            return;
+        }
+
+        if (this.data.checklists[name]) {
+            alert('A checklist with this name already exists!');
+            return;
+        }
+
+        this.data.checklists[name] = [];
+        this.saveData();
+        this.renderChecklistTabs();
+        this.switchChecklist(name);
+        input.value = '';
+        input.focus();
+    }
+
+    deleteChecklist() {
+        if (!this.currentChecklist) return;
+
+        if (confirm(`Are you sure you want to delete "${this.currentChecklist}"? This will delete all tasks in this checklist.`)) {
+            delete this.data.checklists[this.currentChecklist];
+            this.saveData();
+
+            const checklistNames = Object.keys(this.data.checklists);
+            if (checklistNames.length > 0) {
+                this.switchChecklist(checklistNames[0]);
+            } else {
+                this.currentChecklist = null;
+                document.getElementById('currentChecklistName').textContent = 'Select a checklist';
+                document.getElementById('deleteChecklistBtn').style.display = 'none';
+                document.getElementById('checklistItems').innerHTML = `
+                    <div class="empty-state">
+                        <p>📝 Create your first checklist above!</p>
+                    </div>
+                `;
+                document.getElementById('statsText').textContent = '0 tasks total';
+            }
+
+            this.renderChecklistTabs();
+        }
+    }
+
+    renderChecklistTabs() {
+        const tabsContainer = document.getElementById('checklistTabs');
+        const checklistNames = Object.keys(this.data.checklists);
+
+        if (checklistNames.length === 0) {
+            tabsContainer.innerHTML = `
+                <div class="no-checklists-message">
+                    <p>Create your first checklist above to get started!</p>
+                </div>
+            `;
+            return;
+        }
+
+        tabsContainer.innerHTML = checklistNames.map(name => `
+            <button
+                class="tab-button ${name === this.currentChecklist ? 'active' : ''}"
+                onclick="app.switchChecklist('${this.escapeHtml(name)}')"
+            >
+                ${this.escapeHtml(name)}
+            </button>
+        `).join('');
+    }
+
+    switchChecklist(checklistName) {
+        this.currentChecklist = checklistName;
+        document.getElementById('currentChecklistName').textContent = checklistName;
+        document.getElementById('deleteChecklistBtn').style.display = 'inline-block';
+        this.renderChecklistTabs();
         this.renderChecklist();
         this.updateStats();
     }
 
-    updateActiveTab(activeButton) {
-        document.querySelectorAll('.tab-button').forEach(btn => {
-            btn.classList.remove('active');
-        });
-        activeButton.classList.add('active');
-    }
-
     addItem() {
+        if (!this.currentChecklist) {
+            alert('Please create or select a checklist first!');
+            return;
+        }
+
         const input = document.getElementById('newItemInput');
         const text = input.value.trim();
 
@@ -53,17 +134,13 @@ class KitchenChecklistApp {
             return;
         }
 
-        if (!this.data[this.currentCategory]) {
-            this.data[this.currentCategory] = [];
-        }
-
         const newItem = {
             id: Date.now(),
             text: text,
             completed: false
         };
 
-        this.data[this.currentCategory].push(newItem);
+        this.data.checklists[this.currentChecklist].push(newItem);
         this.saveData();
         this.renderChecklist();
         this.updateStats();
@@ -72,7 +149,7 @@ class KitchenChecklistApp {
     }
 
     deleteItem(id) {
-        this.data[this.currentCategory] = this.data[this.currentCategory].filter(
+        this.data.checklists[this.currentChecklist] = this.data.checklists[this.currentChecklist].filter(
             item => item.id !== id
         );
         this.saveData();
@@ -81,7 +158,7 @@ class KitchenChecklistApp {
     }
 
     toggleItem(id) {
-        const item = this.data[this.currentCategory].find(item => item.id === id);
+        const item = this.data.checklists[this.currentChecklist].find(item => item.id === id);
         if (item) {
             item.completed = !item.completed;
             this.saveData();
@@ -92,7 +169,17 @@ class KitchenChecklistApp {
 
     renderChecklist() {
         const container = document.getElementById('checklistItems');
-        const items = this.data[this.currentCategory] || [];
+
+        if (!this.currentChecklist) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <p>📝 Create a checklist to get started!</p>
+                </div>
+            `;
+            return;
+        }
+
+        const items = this.data.checklists[this.currentChecklist] || [];
 
         if (items.length === 0) {
             container.innerHTML = `
@@ -119,7 +206,12 @@ class KitchenChecklistApp {
     }
 
     updateStats() {
-        const items = this.data[this.currentCategory] || [];
+        if (!this.currentChecklist) {
+            document.getElementById('statsText').textContent = '0 tasks total';
+            return;
+        }
+
+        const items = this.data.checklists[this.currentChecklist] || [];
         const total = items.length;
         const completed = items.filter(item => item.completed).length;
         const remaining = total - completed;
@@ -138,11 +230,18 @@ class KitchenChecklistApp {
 
     loadData() {
         const saved = localStorage.getItem('kitchenChecklistData');
-        return saved ? JSON.parse(saved) : {
-            cleaning: [],
-            inventory: [],
-            mealprep: [],
-            shopping: []
+        if (saved) {
+            const data = JSON.parse(saved);
+            // Migrate old data format to new format
+            if (!data.checklists) {
+                return {
+                    checklists: data
+                };
+            }
+            return data;
+        }
+        return {
+            checklists: {}
         };
     }
 

@@ -13,14 +13,23 @@
             <p class="subtitle">Stay organized in your kitchen</p>
         </header>
 
-        <div class="tabs">
-            <button class="tab-button active" data-category="cleaning">🧹 Cleaning</button>
-            <button class="tab-button" data-category="inventory">📦 Inventory</button>
-            <button class="tab-button" data-category="mealprep">🥗 Meal Prep</button>
-            <button class="tab-button" data-category="shopping">🛒 Shopping</button>
+        <div class="checklist-manager">
+            <div class="new-checklist-section">
+                <input type="text" id="newChecklistInput" placeholder="Create a new checklist..." />
+                <button id="addChecklistBtn">+ New Checklist</button>
+            </div>
+        </div>
+
+        <div class="tabs" id="checklistTabs">
+            <!-- Checklists will be dynamically added here -->
         </div>
 
         <div class="checklist-container">
+            <div class="checklist-header">
+                <h2 id="currentChecklistName">Select a checklist</h2>
+                <button id="deleteChecklistBtn" class="delete-checklist-btn" style="display: none;">Delete Checklist</button>
+            </div>
+
             <div class="add-item-section">
                 <input type="text" id="newItemInput" placeholder="Add a new task..." />
                 <button id="addItemBtn">Add</button>
