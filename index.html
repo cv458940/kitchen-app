@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kitchen Checklist App</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🍳 Kitchen Checklist</h1>
+            <p class="subtitle">Stay organized in your kitchen</p>
+        </header>
+
+        <div class="tabs">
+            <button class="tab-button active" data-category="cleaning">🧹 Cleaning</button>
+            <button class="tab-button" data-category="inventory">📦 Inventory</button>
+            <button class="tab-button" data-category="mealprep">🥗 Meal Prep</button>
+            <button class="tab-button" data-category="shopping">🛒 Shopping</button>
+        </div>
+
+        <div class="checklist-container">
+            <div class="add-item-section">
+                <input type="text" id="newItemInput" placeholder="Add a new task..." />
+                <button id="addItemBtn">Add</button>
+            </div>
+
+            <div id="checklistItems" class="checklist-items">
+                <!-- Items will be dynamically added here -->
+            </div>
+
+            <div class="stats">
+                <span id="statsText">0 tasks total</span>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
