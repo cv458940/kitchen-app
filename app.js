@@ -373,22 +373,113 @@ class KitchenListsApp {
             ? Math.round((completedChecklistsToday / totalChecklists) * 100)
             : 0;
 
-        // Count tasks completed today
-        const tasksCompletedToday = this.tasks.filter(task => {
-            if (!task.completed_at) return false;
-            const completedDate = new Date(task.completed_at);
-            completedDate.setHours(0, 0, 0, 0);
-            return completedDate.getTime() === today.getTime();
-        }).length;
+        // Get active users (users who completed at least one task today)
+        const activeUserIds = new Set();
+        this.tasks.forEach(task => {
+            if (task.completed_at && task.completed_by) {
+                const completedDate = new Date(task.completed_at);
+                completedDate.setHours(0, 0, 0, 0);
+                if (completedDate.getTime() === today.getTime()) {
+                    activeUserIds.add(task.completed_by);
+                }
+            }
+        });
 
         // Update stat cards
         document.getElementById('totalChecklistsCount').textContent = totalChecklists;
         document.getElementById('completedChecklistsCount').textContent = completedChecklistsToday;
+        document.getElementById('activeUsersCount').textContent = activeUserIds.size;
         document.getElementById('completionPercentage').textContent = `${completionPercentage}%`;
-        document.getElementById('totalTasksCompletedCount').textContent = tasksCompletedToday;
 
-        // Render user completion stats
+        // Render stats
+        this.renderActiveUserStats(today, checklistCompletionStatus);
         this.renderUserCompletionStats(today);
+    }
+
+    renderActiveUserStats(today, checklistCompletionStatus) {
+        const container = document.getElementById('activeUserStats');
+
+        // Get users who completed at least one task today
+        const activeUserIds = new Set();
+        this.tasks.forEach(task => {
+            if (task.completed_at && task.completed_by) {
+                const completedDate = new Date(task.completed_at);
+                completedDate.setHours(0, 0, 0, 0);
+                if (completedDate.getTime() === today.getTime()) {
+                    activeUserIds.add(task.completed_by);
+                }
+            }
+        });
+
+        if (activeUserIds.size === 0) {
+            container.innerHTML = '<p style="color: #999; text-align: center;">No users have completed tasks today</p>';
+            return;
+        }
+
+        // Calculate completion stats for each active user
+        const userStats = Array.from(activeUserIds).map(userId => {
+            const user = this.users.find(u => u.id === userId);
+            if (!user) return null;
+
+            // Count how many checklists this user helped complete today
+            const checklistsCompleted = checklistCompletionStatus.filter(cs => {
+                if (!cs.completed) return false;
+
+                // Check if this user contributed to this checklist
+                const checklistTasks = this.tasks.filter(t => t.checklist_id === cs.checklist.id);
+                return checklistTasks.some(task => {
+                    if (task.completed_by !== userId) return false;
+                    if (!task.completed_at) return false;
+                    const completedDate = new Date(task.completed_at);
+                    completedDate.setHours(0, 0, 0, 0);
+                    return completedDate.getTime() === today.getTime();
+                });
+            }).length;
+
+            // Count total tasks completed by this user today
+            const tasksCompleted = this.tasks.filter(task => {
+                if (task.completed_by !== userId) return false;
+                if (!task.completed_at) return false;
+                const completedDate = new Date(task.completed_at);
+                completedDate.setHours(0, 0, 0, 0);
+                return completedDate.getTime() === today.getTime();
+            }).length;
+
+            return {
+                user,
+                checklistsCompleted,
+                tasksCompleted
+            };
+        }).filter(stat => stat !== null);
+
+        // Sort by checklists completed (descending), then by tasks completed
+        userStats.sort((a, b) => {
+            if (b.checklistsCompleted !== a.checklistsCompleted) {
+                return b.checklistsCompleted - a.checklistsCompleted;
+            }
+            return b.tasksCompleted - a.tasksCompleted;
+        });
+
+        container.innerHTML = userStats.map(stat => {
+            return `
+                <div class="user-stat-row">
+                    <div class="user-stat-info">
+                        <span class="user-stat-name">${this.escapeHtml(stat.user.username)}</span>
+                        <span class="user-role-badge ${stat.user.role}">${stat.user.role}</span>
+                    </div>
+                    <div class="user-stat-numbers">
+                        <div class="stat-badge checklists">
+                            <span class="stat-badge-number">${stat.checklistsCompleted}</span>
+                            <span class="stat-badge-label">Checklist${stat.checklistsCompleted !== 1 ? 's' : ''} Completed</span>
+                        </div>
+                        <div class="stat-badge tasks">
+                            <span class="stat-badge-number">${stat.tasksCompleted}</span>
+                            <span class="stat-badge-label">Task${stat.tasksCompleted !== 1 ? 's' : ''} Done</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
     }
 
     renderUserCompletionStats(today) {
