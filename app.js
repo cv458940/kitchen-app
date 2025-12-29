@@ -9,12 +9,18 @@ class KitchenListsApp {
     }
 
     init() {
-        // Initialize default users if none exist
+        // Initialize default admin user if none exist
         if (!this.data.users || this.data.users.length === 0) {
             this.data.users = [
-                { username: 'Manager', role: 'manager' },
-                { username: 'Employee 1', role: 'employee' }
+                { username: 'Admin', role: 'admin', password: 'password' }
             ];
+            this.saveData();
+        }
+
+        // Ensure admin user exists (migration)
+        const adminExists = this.data.users.find(u => u.role === 'admin');
+        if (!adminExists) {
+            this.data.users.push({ username: 'Admin', role: 'admin', password: 'password' });
             this.saveData();
         }
 
@@ -25,7 +31,11 @@ class KitchenListsApp {
     setupEventListeners() {
         // Login
         document.getElementById('loginBtn').addEventListener('click', () => this.login());
+        document.getElementById('userSelect').addEventListener('change', (e) => this.handleUserSelection(e));
         document.getElementById('userSelect').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') this.login();
+        });
+        document.getElementById('passwordInput').addEventListener('keypress', (e) => {
             if (e.key === 'Enter') this.login();
         });
 
@@ -64,6 +74,15 @@ class KitchenListsApp {
         document.getElementById('newUsername').addEventListener('keypress', (e) => {
             if (e.key === 'Enter') this.addUser();
         });
+        document.getElementById('newUserRole').addEventListener('change', (e) => {
+            const passwordField = document.getElementById('newUserPassword');
+            if (e.target.value === 'manager') {
+                passwordField.style.display = 'block';
+            } else {
+                passwordField.style.display = 'none';
+                passwordField.value = '';
+            }
+        });
     }
 
     showLoginScreen() {
@@ -84,6 +103,27 @@ class KitchenListsApp {
         });
     }
 
+    handleUserSelection(e) {
+        const username = e.target.value;
+        const passwordSection = document.getElementById('passwordSection');
+        const passwordInput = document.getElementById('passwordInput');
+
+        if (username) {
+            const user = this.data.users.find(u => u.username === username);
+            // Show password field for admin users
+            if (user && (user.role === 'admin' || user.role === 'manager')) {
+                passwordSection.style.display = 'block';
+                passwordInput.focus();
+            } else {
+                passwordSection.style.display = 'none';
+                passwordInput.value = '';
+            }
+        } else {
+            passwordSection.style.display = 'none';
+            passwordInput.value = '';
+        }
+    }
+
     login() {
         const username = document.getElementById('userSelect').value;
         if (!username) {
@@ -91,16 +131,34 @@ class KitchenListsApp {
             return;
         }
 
-        this.currentUser = this.data.users.find(u => u.username === username);
+        const user = this.data.users.find(u => u.username === username);
+
+        // Check password for admin/manager users
+        if (user && (user.role === 'admin' || user.role === 'manager')) {
+            const password = document.getElementById('passwordInput').value;
+            if (!password) {
+                alert('Please enter your password!');
+                return;
+            }
+            if (user.password !== password) {
+                alert('Incorrect password!');
+                return;
+            }
+        }
+
+        this.currentUser = user;
         document.getElementById('loginScreen').style.display = 'none';
         document.getElementById('mainApp').style.display = 'block';
+
+        // Clear password field
+        document.getElementById('passwordInput').value = '';
 
         // Update welcome message
         document.getElementById('userWelcome').textContent =
             `Welcome, ${this.currentUser.username} (${this.currentUser.role})`;
 
-        // Show manager controls if manager
-        if (this.currentUser.role === 'manager') {
+        // Show manager controls if admin or manager
+        if (this.currentUser.role === 'admin' || this.currentUser.role === 'manager') {
             document.getElementById('managerControls').style.display = 'block';
             this.populateEmployeeSelect();
         } else {
@@ -425,8 +483,10 @@ class KitchenListsApp {
     }
 
     addUser() {
-        const input = document.getElementById('newUsername');
-        const username = input.value.trim();
+        const usernameInput = document.getElementById('newUsername');
+        const username = usernameInput.value.trim();
+        const role = document.getElementById('newUserRole').value;
+        const passwordInput = document.getElementById('newUserPassword');
 
         if (username === '') {
             alert('Please enter a name!');
@@ -438,12 +498,29 @@ class KitchenListsApp {
             return;
         }
 
-        this.data.users.push({ username, role: 'employee' });
+        const newUser = { username, role };
+
+        // Add password for managers
+        if (role === 'manager') {
+            const password = passwordInput.value.trim();
+            if (!password) {
+                alert('Please enter a password for the manager!');
+                return;
+            }
+            newUser.password = password;
+        }
+
+        this.data.users.push(newUser);
         this.saveData();
         this.renderUserList();
         this.populateUserSelect();
         this.populateEmployeeSelect();
-        input.value = '';
+
+        // Reset form
+        usernameInput.value = '';
+        passwordInput.value = '';
+        passwordInput.style.display = 'none';
+        document.getElementById('newUserRole').value = 'employee';
     }
 
     deleteUser(username) {
@@ -453,12 +530,13 @@ class KitchenListsApp {
         }
 
         const user = this.data.users.find(u => u.username === username);
-        if (user.role === 'manager') {
-            alert('Cannot delete manager accounts!');
+        if (user.role === 'admin') {
+            alert('Cannot delete admin accounts!');
             return;
         }
 
-        if (confirm(`Are you sure you want to delete employee "${username}"? This will also delete all their checklists.`)) {
+        const userType = user.role === 'manager' ? 'manager' : 'employee';
+        if (confirm(`Are you sure you want to delete ${userType} "${username}"? This will also delete all their checklists.`)) {
             this.data.users = this.data.users.filter(u => u.username !== username);
             delete this.data.checklists[username];
             this.saveData();
@@ -475,14 +553,15 @@ class KitchenListsApp {
     renderUserList() {
         const container = document.getElementById('userList');
 
-        const employees = this.data.users.filter(u => u.role === 'employee');
+        // Show all users except admins
+        const nonAdminUsers = this.data.users.filter(u => u.role !== 'admin');
 
-        if (employees.length === 0) {
-            container.innerHTML = '<p style="color: #999; text-align: center;">No employees yet</p>';
+        if (nonAdminUsers.length === 0) {
+            container.innerHTML = '<p style="color: #999; text-align: center;">No users yet</p>';
             return;
         }
 
-        container.innerHTML = employees.map(user => `
+        container.innerHTML = nonAdminUsers.map(user => `
             <div class="user-item">
                 <div class="user-item-info">
                     <span>${this.escapeHtml(user.username)}</span>

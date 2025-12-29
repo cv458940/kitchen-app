@@ -15,6 +15,9 @@
             <select id="userSelect" class="user-select">
                 <option value="">-- Select User --</option>
             </select>
+            <div id="passwordSection" style="display: none;">
+                <input type="password" id="passwordInput" class="password-input" placeholder="Enter password" />
+            </div>
             <button id="loginBtn" class="login-btn">Login</button>
         </div>
     </div>
@@ -36,7 +39,7 @@
                     <button id="myListsBtn" class="view-btn active">My Lists</button>
                     <button id="employeeListsBtn" class="view-btn">Employee Lists</button>
                 </div>
-                <button id="manageUsersBtn" class="manage-users-btn">👥 Manage Employees</button>
+                <button id="manageUsersBtn" class="manage-users-btn">👥 Manage Users</button>
             </div>
         </div>
 
@@ -84,17 +87,22 @@
     <div id="userModal" class="modal" style="display: none;">
         <div class="modal-content">
             <div class="modal-header">
-                <h2>Manage Employees</h2>
+                <h2>Manage Users</h2>
                 <button id="closeModalBtn" class="close-btn">&times;</button>
             </div>
             <div class="modal-body">
                 <div class="add-user-section">
-                    <h3>Add New Employee</h3>
-                    <input type="text" id="newUsername" placeholder="Enter employee name" />
-                    <button id="addUserBtn" class="add-user-btn">Add Employee</button>
+                    <h3>Add New User</h3>
+                    <input type="text" id="newUsername" placeholder="Enter name" />
+                    <select id="newUserRole" class="user-role-select">
+                        <option value="employee">Employee</option>
+                        <option value="manager">Manager</option>
+                    </select>
+                    <input type="password" id="newUserPassword" class="new-user-password" placeholder="Password (for managers only)" style="display: none;" />
+                    <button id="addUserBtn" class="add-user-btn">Add User</button>
                 </div>
                 <div class="user-list-section">
-                    <h3>Current Employees</h3>
+                    <h3>Current Users</h3>
                     <div id="userList" class="user-list">
                         <!-- User list will be populated here -->
                     </div>

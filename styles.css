@@ -340,6 +340,21 @@ header h1 {
     border-color: #667eea;
 }
 
+.password-input {
+    width: 100%;
+    padding: 12px 15px;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    font-size: 1rem;
+    margin-bottom: 20px;
+    background: white;
+}
+
+.password-input:focus {
+    outline: none;
+    border-color: #667eea;
+}
+
 .login-btn {
     width: 100%;
     padding: 14px;
@@ -564,6 +579,36 @@ header h1 {
     border-color: #667eea;
 }
 
+.user-role-select {
+    width: 100%;
+    padding: 10px 15px;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    font-size: 1rem;
+    margin-bottom: 10px;
+    background: white;
+    cursor: pointer;
+}
+
+.user-role-select:focus {
+    outline: none;
+    border-color: #667eea;
+}
+
+.new-user-password {
+    width: 100%;
+    padding: 10px 15px;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    font-size: 1rem;
+    margin-bottom: 10px;
+}
+
+.new-user-password:focus {
+    outline: none;
+    border-color: #667eea;
+}
+
 .add-user-btn {
     width: 100%;
     padding: 10px;
@@ -613,6 +658,11 @@ header h1 {
     font-size: 0.75rem;
     font-weight: bold;
     text-transform: uppercase;
+}
+
+.user-role-badge.admin {
+    background: #ff6b6b;
+    color: white;
 }
 
 .user-role-badge.manager {
