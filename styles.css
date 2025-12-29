@@ -118,6 +118,17 @@ header h1 {
     font-weight: bold;
 }
 
+.tab-button.complete {
+    background: #e8f5e9;
+    color: #2e7d32;
+    font-weight: 600;
+}
+
+.tab-button.complete.active {
+    background: #c8e6c9;
+    border-bottom: 3px solid #5CB85C;
+}
+
 .no-checklists-message {
     padding: 20px;
     text-align: center;

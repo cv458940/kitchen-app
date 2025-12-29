@@ -316,6 +316,7 @@ class KitchenListsApp {
         document.getElementById('checklistManagementView').style.display = 'block';
 
         await this.loadChecklists();
+        await this.loadAllTasks(); // Load all tasks to check completion status
         this.renderChecklistTabs();
         this.updateUIPermissions();
     }
@@ -686,12 +687,28 @@ class KitchenListsApp {
         tabsContainer.innerHTML = checklists.map(checklist => {
             const isActive = this.currentChecklist === checklist.id;
 
+            // Check if checklist is complete
+            const checklistTasks = this.tasks.filter(t => t.checklist_id === checklist.id);
+            let isComplete = false;
+
+            if (checklistTasks.length > 0) {
+                isComplete = checklistTasks.every(task => {
+                    if (task.type === 'checkbox') {
+                        return task.completed;
+                    } else {
+                        return task.value && task.value.trim() !== '';
+                    }
+                });
+            }
+
+            const completionIcon = isComplete ? '✓ ' : '';
+
             return `
                 <button
-                    class="tab-button ${isActive ? 'active' : ''}"
+                    class="tab-button ${isActive ? 'active' : ''} ${isComplete ? 'complete' : ''}"
                     onclick="app.switchChecklist('${checklist.id}')"
                 >
-                    ${this.escapeHtml(checklist.name)}
+                    ${completionIcon}${this.escapeHtml(checklist.name)}
                 </button>
             `;
         }).join('');
@@ -708,8 +725,9 @@ class KitchenListsApp {
         const isManagerOrAdmin = this.currentUser.role === 'admin' || this.currentUser.role === 'manager';
         document.getElementById('deleteChecklistBtn').style.display = isManagerOrAdmin ? 'inline-block' : 'none';
 
-        this.renderChecklistTabs();
         await this.loadTasks(checklistId);
+        await this.loadAllTasks(); // Reload all tasks to update completion status
+        this.renderChecklistTabs();
         this.renderChecklist();
         this.updateStats();
         this.updateUIPermissions();
@@ -759,6 +777,8 @@ class KitchenListsApp {
         }
 
         await this.loadTasks(this.currentChecklist);
+        await this.loadAllTasks(); // Reload all tasks to update completion status
+        this.renderChecklistTabs(); // Update tab completion status
         this.renderChecklist();
         this.updateStats();
         input.value = '';
@@ -778,6 +798,8 @@ class KitchenListsApp {
         }
 
         await this.loadTasks(this.currentChecklist);
+        await this.loadAllTasks(); // Reload all tasks to update completion status
+        this.renderChecklistTabs(); // Update tab completion status
         this.renderChecklist();
         this.updateStats();
     }
@@ -805,6 +827,8 @@ class KitchenListsApp {
             }
 
             await this.loadTasks(this.currentChecklist);
+            await this.loadAllTasks(); // Reload all tasks to update completion status
+            this.renderChecklistTabs(); // Update tab completion status
             this.renderChecklist();
             this.updateStats();
         }
@@ -832,6 +856,8 @@ class KitchenListsApp {
             }
 
             await this.loadTasks(this.currentChecklist);
+            await this.loadAllTasks(); // Reload all tasks to update completion status
+            this.renderChecklistTabs(); // Update tab completion status
             this.updateStats();
         }
     }
