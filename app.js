@@ -1,7 +1,7 @@
 // Initialize Supabase client
 const SUPABASE_URL = 'https://qotwmbeawwxlmbzuhazt.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFvdHdtYmVhd3d4bG1ienVoYXp0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY5NzM0NzMsImV4cCI6MjA4MjU0OTQ3M30.v9w7LxV-JdTmi5zWdoyf4otcpcnAT7UGkn6NXIlqAo0';
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 class KitchenListsApp {
     constructor() {
@@ -89,7 +89,7 @@ class KitchenListsApp {
     // ============================================
 
     async loadUsers() {
-        const { data, error } = await supabase
+        const { data, error } = await supabaseClient
             .from('users')
             .select('*')
             .order('username');
@@ -103,7 +103,7 @@ class KitchenListsApp {
     }
 
     async loadChecklists(ownerId = null) {
-        let query = supabase
+        let query = supabaseClient
             .from('checklists')
             .select('*')
             .order('name');
@@ -123,7 +123,7 @@ class KitchenListsApp {
     }
 
     async loadTasks(checklistId) {
-        const { data, error } = await supabase
+        const { data, error } = await supabaseClient
             .from('tasks')
             .select('*')
             .eq('checklist_id', checklistId)
@@ -320,7 +320,7 @@ class KitchenListsApp {
             return;
         }
 
-        const { data, error } = await supabase
+        const { data, error } = await supabaseClient
             .from('checklists')
             .insert([{ name, owner_id: ownerId }])
             .select()
@@ -345,7 +345,7 @@ class KitchenListsApp {
         const checklistName = this.checklists.find(c => c.id === this.currentChecklist)?.name;
 
         if (confirm(`Are you sure you want to delete "${checklistName}"? This will delete all tasks in this checklist.`)) {
-            const { error } = await supabase
+            const { error } = await supabaseClientClient
                 .from('checklists')
                 .delete()
                 .eq('id', this.currentChecklist);
@@ -467,7 +467,7 @@ class KitchenListsApp {
 
         const position = this.tasks.length;
 
-        const { data, error } = await supabase
+        const { data, error } = await supabaseClient
             .from('tasks')
             .insert([{
                 checklist_id: this.currentChecklist,
@@ -497,7 +497,7 @@ class KitchenListsApp {
     }
 
     async deleteItem(id) {
-        const { error } = await supabase
+        const { error } = await supabaseClient
             .from('tasks')
             .delete()
             .eq('id', id);
@@ -524,7 +524,7 @@ class KitchenListsApp {
                 completed_by: newCompleted ? this.currentUser.id : null
             };
 
-            const { error } = await supabase
+            const { error } = await supabaseClientClient
                 .from('tasks')
                 .update(updateData)
                 .eq('id', id);
@@ -552,7 +552,7 @@ class KitchenListsApp {
                 completed_by: hasValue ? this.currentUser.id : null
             };
 
-            const { error } = await supabase
+            const { error } = await supabaseClientClient
                 .from('tasks')
                 .update(updateData)
                 .eq('id', id);
@@ -568,7 +568,7 @@ class KitchenListsApp {
     }
 
     async updateTaskComment(id, comment) {
-        const { error } = await supabase
+        const { error } = await supabaseClient
             .from('tasks')
             .update({ comment })
             .eq('id', id);
@@ -769,7 +769,7 @@ class KitchenListsApp {
             newUser.password = password;
         }
 
-        const { error } = await supabase
+        const { error } = await supabaseClient
             .from('users')
             .insert([newUser]);
 
@@ -805,7 +805,7 @@ class KitchenListsApp {
 
         const userType = user.role === 'manager' ? 'manager' : 'employee';
         if (confirm(`Are you sure you want to delete ${userType} "${user.username}"? This will also delete all their checklists.`)) {
-            const { error } = await supabase
+            const { error } = await supabaseClientClient
                 .from('users')
                 .delete()
                 .eq('id', userId);
