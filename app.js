@@ -7,7 +7,6 @@ class KitchenListsApp {
     constructor() {
         this.currentUser = null;
         this.currentChecklist = null;
-        this.viewMode = 'myLists'; // 'myLists' or 'employeeLists'
         this.selectedEmployee = 'all';
         this.users = [];
         this.checklists = [];
@@ -55,8 +54,6 @@ class KitchenListsApp {
         document.getElementById('deleteChecklistBtn').addEventListener('click', () => this.deleteChecklist());
 
         // Manager controls
-        document.getElementById('myListsBtn').addEventListener('click', () => this.switchView('myLists'));
-        document.getElementById('employeeListsBtn').addEventListener('click', () => this.switchView('employeeLists'));
         document.getElementById('manageUsersBtn').addEventListener('click', () => this.openUserModal());
 
         // Employee filter
@@ -216,12 +213,13 @@ class KitchenListsApp {
         // Show manager controls if admin or manager
         if (this.currentUser.role === 'admin' || this.currentUser.role === 'manager') {
             document.getElementById('managerControls').style.display = 'block';
+            document.getElementById('employeeFilter').style.display = 'flex';
             this.populateEmployeeSelect();
         } else {
             document.getElementById('managerControls').style.display = 'none';
+            document.getElementById('employeeFilter').style.display = 'none';
         }
 
-        this.viewMode = 'myLists';
         await this.loadChecklists();
         this.renderChecklistTabs();
         this.updateUIPermissions();
@@ -252,37 +250,27 @@ class KitchenListsApp {
     logout() {
         this.currentUser = null;
         this.currentChecklist = null;
-        this.viewMode = 'myLists';
+        this.selectedEmployee = 'all';
         this.checklists = [];
         this.tasks = [];
         this.showLoginScreen();
     }
 
     // ============================================
-    // VIEW SWITCHING
+    // EMPLOYEE FILTER
     // ============================================
-
-    async switchView(mode) {
-        this.viewMode = mode;
-        this.currentChecklist = null;
-
-        // Update button states
-        document.getElementById('myListsBtn').classList.toggle('active', mode === 'myLists');
-        document.getElementById('employeeListsBtn').classList.toggle('active', mode === 'employeeLists');
-
-        // Show/hide employee filter
-        document.getElementById('employeeFilter').style.display =
-            mode === 'employeeLists' ? 'flex' : 'none';
-
-        await this.loadChecklists();
-        this.renderChecklistTabs();
-        this.renderChecklist();
-    }
 
     populateEmployeeSelect() {
         const select = document.getElementById('employeeSelect');
-        select.innerHTML = '<option value="all">All Employees</option>';
+        select.innerHTML = '<option value="all">All</option>';
 
+        // Add current user (manager/admin) as first option
+        const myOption = document.createElement('option');
+        myOption.value = this.currentUser.id;
+        myOption.textContent = `${this.currentUser.username} (Me)`;
+        select.appendChild(myOption);
+
+        // Add all employees
         this.users
             .filter(u => u.role === 'employee')
             .forEach(user => {
@@ -306,9 +294,13 @@ class KitchenListsApp {
             return;
         }
 
-        const ownerId = this.viewMode === 'myLists'
-            ? this.currentUser.id
-            : this.selectedEmployee;
+        // Determine owner based on selected employee filter
+        let ownerId = this.currentUser.id;
+        if (this.currentUser.role === 'admin' || this.currentUser.role === 'manager') {
+            if (this.selectedEmployee !== 'all') {
+                ownerId = this.selectedEmployee;
+            }
+        }
 
         // Check if checklist already exists
         const existing = this.checklists.find(c =>
@@ -345,7 +337,7 @@ class KitchenListsApp {
         const checklistName = this.checklists.find(c => c.id === this.currentChecklist)?.name;
 
         if (confirm(`Are you sure you want to delete "${checklistName}"? This will delete all tasks in this checklist.`)) {
-            const { error } = await supabaseClientClient
+            const { error } = await supabaseClient
                 .from('checklists')
                 .delete()
                 .eq('id', this.currentChecklist);
@@ -379,17 +371,18 @@ class KitchenListsApp {
     }
 
     getAvailableChecklists() {
-        if (this.viewMode === 'myLists') {
+        // For employees, show only their own checklists
+        if (this.currentUser.role === 'employee') {
             return this.checklists.filter(c => c.owner_id === this.currentUser.id);
+        }
+
+        // For managers/admins, filter based on selected employee
+        if (this.selectedEmployee === 'all') {
+            // Show all checklists (manager's own + all employees')
+            return this.checklists;
         } else {
-            if (this.selectedEmployee === 'all') {
-                const employeeIds = this.users
-                    .filter(u => u.role === 'employee')
-                    .map(u => u.id);
-                return this.checklists.filter(c => employeeIds.includes(c.owner_id));
-            } else {
-                return this.checklists.filter(c => c.owner_id === this.selectedEmployee);
-            }
+            // Show checklists for the selected user only
+            return this.checklists.filter(c => c.owner_id === this.selectedEmployee);
         }
     }
 
@@ -409,7 +402,11 @@ class KitchenListsApp {
         tabsContainer.innerHTML = checklists.map(checklist => {
             const isActive = this.currentChecklist === checklist.id;
             const owner = this.users.find(u => u.id === checklist.owner_id);
-            const displayName = this.viewMode === 'employeeLists' ?
+
+            // Always show owner name for managers/admins when viewing all or multiple users
+            const isManagerOrAdmin = this.currentUser.role === 'admin' || this.currentUser.role === 'manager';
+            const showOwner = isManagerOrAdmin && this.selectedEmployee === 'all';
+            const displayName = showOwner ?
                 `${owner?.username || 'Unknown'} - ${checklist.name}` : checklist.name;
 
             return `
@@ -430,13 +427,13 @@ class KitchenListsApp {
         if (!checklist) return;
 
         const owner = this.users.find(u => u.id === checklist.owner_id);
-        const displayName = this.viewMode === 'employeeLists'
+        const isManagerOrAdmin = this.currentUser.role === 'admin' || this.currentUser.role === 'manager';
+        const showOwner = isManagerOrAdmin && this.selectedEmployee === 'all';
+        const displayName = showOwner
             ? `${owner?.username || 'Unknown'} - ${checklist.name}`
             : checklist.name;
 
         document.getElementById('currentChecklistName').textContent = displayName;
-
-        const isManagerOrAdmin = this.currentUser.role === 'admin' || this.currentUser.role === 'manager';
         document.getElementById('deleteChecklistBtn').style.display = isManagerOrAdmin ? 'inline-block' : 'none';
 
         this.renderChecklistTabs();
@@ -524,7 +521,7 @@ class KitchenListsApp {
                 completed_by: newCompleted ? this.currentUser.id : null
             };
 
-            const { error } = await supabaseClientClient
+            const { error } = await supabaseClient
                 .from('tasks')
                 .update(updateData)
                 .eq('id', id);
@@ -552,7 +549,7 @@ class KitchenListsApp {
                 completed_by: hasValue ? this.currentUser.id : null
             };
 
-            const { error } = await supabaseClientClient
+            const { error } = await supabaseClient
                 .from('tasks')
                 .update(updateData)
                 .eq('id', id);
@@ -805,7 +802,7 @@ class KitchenListsApp {
 
         const userType = user.role === 'manager' ? 'manager' : 'employee';
         if (confirm(`Are you sure you want to delete ${userType} "${user.username}"? This will also delete all their checklists.`)) {
-            const { error } = await supabaseClientClient
+            const { error } = await supabaseClient
                 .from('users')
                 .delete()
                 .eq('id', userId);
@@ -821,10 +818,9 @@ class KitchenListsApp {
             this.populateUserSelect();
             this.populateEmployeeSelect();
 
-            if (this.viewMode === 'employeeLists') {
-                await this.loadChecklists();
-                this.renderChecklistTabs();
-            }
+            // Reload checklists since user's checklists were deleted
+            await this.loadChecklists();
+            this.renderChecklistTabs();
         }
     }
 
