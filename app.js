@@ -10,7 +10,8 @@ class KitchenListsApp {
         this.currentView = 'dashboard'; // 'dashboard' or 'checklists'
         this.users = [];
         this.checklists = [];
-        this.tasks = [];
+        this.tasks = []; // Tasks for current checklist only
+        this.allTasks = []; // All tasks across all checklists (for completion checking)
         this.lastResetDate = null;
         this.init();
     }
@@ -253,10 +254,14 @@ class KitchenListsApp {
     updateUIPermissions() {
         const isManagerOrAdmin = this.currentUser.role === 'admin' || this.currentUser.role === 'manager';
 
+        // Check if current checklist is complete
+        const isCurrentChecklistComplete = this.isChecklistComplete(this.currentChecklist);
+
         // Show/hide task creation section
         const addItemSection = document.querySelector('.add-item-section');
         if (addItemSection) {
-            addItemSection.style.display = isManagerOrAdmin ? 'flex' : 'none';
+            // Hide if not manager/admin OR if checklist is complete
+            addItemSection.style.display = (isManagerOrAdmin && !isCurrentChecklistComplete) ? 'flex' : 'none';
         }
 
         // Show/hide checklist creation section
@@ -267,9 +272,29 @@ class KitchenListsApp {
 
         // Show/hide delete checklist button
         const deleteChecklistBtn = document.getElementById('deleteChecklistBtn');
-        if (deleteChecklistBtn && !isManagerOrAdmin) {
-            deleteChecklistBtn.style.display = 'none';
+        if (deleteChecklistBtn) {
+            if (!isManagerOrAdmin || isCurrentChecklistComplete) {
+                deleteChecklistBtn.style.display = 'none';
+            } else {
+                deleteChecklistBtn.style.display = 'inline-block';
+            }
         }
+    }
+
+    isChecklistComplete(checklistId) {
+        if (!checklistId) return false;
+
+        const checklistTasks = this.allTasks.filter(t => t.checklist_id === checklistId);
+
+        if (checklistTasks.length === 0) return false;
+
+        return checklistTasks.every(task => {
+            if (task.type === 'checkbox') {
+                return task.completed;
+            } else {
+                return task.value && task.value.trim() !== '';
+            }
+        });
     }
 
     logout() {
@@ -333,9 +358,9 @@ class KitchenListsApp {
 
         if (error) {
             console.error('Error loading all tasks:', error);
-            this.tasks = [];
+            this.allTasks = [];
         } else {
-            this.tasks = data || [];
+            this.allTasks = data || [];
         }
     }
 
@@ -348,7 +373,7 @@ class KitchenListsApp {
 
         // Count checklists that have all tasks completed today
         const checklistCompletionStatus = this.checklists.map(checklist => {
-            const checklistTasks = this.tasks.filter(t => t.checklist_id === checklist.id);
+            const checklistTasks = this.allTasks.filter(t => t.checklist_id === checklist.id);
             if (checklistTasks.length === 0) return { checklist, allCompleted: false, completedToday: false };
 
             const allCompleted = checklistTasks.every(task => {
@@ -376,7 +401,7 @@ class KitchenListsApp {
 
         // Get active users (users who completed at least one task today)
         const activeUserIds = new Set();
-        this.tasks.forEach(task => {
+        this.allTasks.forEach(task => {
             if (task.completed_at && task.completed_by) {
                 const completedDate = new Date(task.completed_at);
                 completedDate.setHours(0, 0, 0, 0);
@@ -402,7 +427,7 @@ class KitchenListsApp {
 
         // Get users who completed at least one task today
         const activeUserIds = new Set();
-        this.tasks.forEach(task => {
+        this.allTasks.forEach(task => {
             if (task.completed_at && task.completed_by) {
                 const completedDate = new Date(task.completed_at);
                 completedDate.setHours(0, 0, 0, 0);
@@ -422,23 +447,33 @@ class KitchenListsApp {
             const user = this.users.find(u => u.id === userId);
             if (!user) return null;
 
-            // Count how many checklists this user helped complete today
+            // Count how many checklists this user FINISHED (was the last to complete all tasks)
             const checklistsCompleted = checklistCompletionStatus.filter(cs => {
-                if (!cs.completed) return false;
+                if (!cs.allCompleted) return false;
 
-                // Check if this user contributed to this checklist
-                const checklistTasks = this.tasks.filter(t => t.checklist_id === cs.checklist.id);
-                return checklistTasks.some(task => {
-                    if (task.completed_by !== userId) return false;
-                    if (!task.completed_at) return false;
-                    const completedDate = new Date(task.completed_at);
-                    completedDate.setHours(0, 0, 0, 0);
-                    return completedDate.getTime() === today.getTime();
+                // Get all tasks for this checklist
+                const checklistTasks = this.allTasks.filter(t => t.checklist_id === cs.checklist.id);
+
+                // Find the last task completed (the one that finished the checklist)
+                let lastCompletedTask = null;
+                let latestTime = 0;
+
+                checklistTasks.forEach(task => {
+                    if (task.completed_at) {
+                        const taskTime = new Date(task.completed_at).getTime();
+                        if (taskTime > latestTime) {
+                            latestTime = taskTime;
+                            lastCompletedTask = task;
+                        }
+                    }
                 });
+
+                // This user gets credit if they completed the final task
+                return lastCompletedTask && lastCompletedTask.completed_by === userId;
             }).length;
 
             // Count total tasks completed by this user today
-            const tasksCompleted = this.tasks.filter(task => {
+            const tasksCompleted = this.allTasks.filter(task => {
                 if (task.completed_by !== userId) return false;
                 if (!task.completed_at) return false;
                 const completedDate = new Date(task.completed_at);
@@ -493,10 +528,10 @@ class KitchenListsApp {
 
         // Build completion data for each checklist
         const checklistData = this.checklists.map(checklist => {
-            const checklistTasks = this.tasks.filter(t => t.checklist_id === checklist.id);
+            const checklistTasks = this.allTasks.filter(t => t.checklist_id === checklist.id);
 
             if (checklistTasks.length === 0) {
-                return { checklist, completed: false, contributors: [], totalTasks: 0, completedTasks: 0 };
+                return { checklist, completed: false, completedBy: null, totalTasks: 0, completedTasks: 0 };
             }
 
             const allCompleted = checklistTasks.every(task => {
@@ -514,21 +549,26 @@ class KitchenListsApp {
                 return completedDate.getTime() === today.getTime();
             });
 
-            // Get unique contributors who completed tasks today
-            const contributorIds = new Set();
-            checklistTasks.forEach(task => {
-                if (task.completed_at) {
-                    const completedDate = new Date(task.completed_at);
-                    completedDate.setHours(0, 0, 0, 0);
-                    if (completedDate.getTime() === today.getTime() && task.completed_by) {
-                        contributorIds.add(task.completed_by);
-                    }
-                }
-            });
+            // Find who completed the checklist (the person who completed the last task)
+            let completedByUser = null;
+            if (allCompleted && completedToday) {
+                let lastCompletedTask = null;
+                let latestTime = 0;
 
-            const contributors = Array.from(contributorIds).map(id =>
-                this.users.find(u => u.id === id)
-            ).filter(u => u);
+                checklistTasks.forEach(task => {
+                    if (task.completed_at) {
+                        const taskTime = new Date(task.completed_at).getTime();
+                        if (taskTime > latestTime) {
+                            latestTime = taskTime;
+                            lastCompletedTask = task;
+                        }
+                    }
+                });
+
+                if (lastCompletedTask && lastCompletedTask.completed_by) {
+                    completedByUser = this.users.find(u => u.id === lastCompletedTask.completed_by);
+                }
+            }
 
             const completedTasksToday = checklistTasks.filter(task => {
                 if (!task.completed_at) return false;
@@ -540,7 +580,7 @@ class KitchenListsApp {
             return {
                 checklist,
                 completed: allCompleted && completedToday,
-                contributors,
+                completedBy: completedByUser,
                 totalTasks: checklistTasks.length,
                 completedTasks: completedTasksToday
             };
@@ -561,8 +601,8 @@ class KitchenListsApp {
                 ? '<span class="completion-badge complete">✓ Complete</span>'
                 : `<span class="completion-badge incomplete">${data.completedTasks}/${data.totalTasks} tasks</span>`;
 
-            const contributorsList = data.contributors.length > 0
-                ? data.contributors.map(u => `<span class="contributor-badge">${this.escapeHtml(u.username)}</span>`).join(' ')
+            const completedByDisplay = data.completed && data.completedBy
+                ? `<span class="contributor-badge">${this.escapeHtml(data.completedBy.username)}</span>`
                 : '<span class="no-contributors">No activity today</span>';
 
             return `
@@ -579,7 +619,7 @@ class KitchenListsApp {
                     </div>
                     <div class="checklist-contributors">
                         <span class="contributors-label">Completed by:</span>
-                        ${contributorsList}
+                        ${completedByDisplay}
                     </div>
                 </div>
             `;
@@ -687,8 +727,8 @@ class KitchenListsApp {
         tabsContainer.innerHTML = checklists.map(checklist => {
             const isActive = this.currentChecklist === checklist.id;
 
-            // Check if checklist is complete
-            const checklistTasks = this.tasks.filter(t => t.checklist_id === checklist.id);
+            // Check if checklist is complete using allTasks
+            const checklistTasks = this.allTasks.filter(t => t.checklist_id === checklist.id);
             let isComplete = false;
 
             if (checklistTasks.length > 0) {
@@ -903,8 +943,19 @@ class KitchenListsApp {
         }
 
         const isManagerOrAdmin = this.currentUser.role === 'admin' || this.currentUser.role === 'manager';
+        const isComplete = this.isChecklistComplete(this.currentChecklist);
 
-        container.innerHTML = this.tasks.map(item => {
+        // Add completion notice if checklist is complete
+        let completionNotice = '';
+        if (isComplete) {
+            completionNotice = `
+                <div class="checklist-complete-notice">
+                    ✓ This checklist is complete and locked for editing
+                </div>
+            `;
+        }
+
+        container.innerHTML = completionNotice + this.tasks.map(item => {
             let timestampHTML = '';
             const hasValue = item.type === 'checkbox' ? item.completed : (item.value && item.value.trim() !== '');
 
@@ -929,6 +980,7 @@ class KitchenListsApp {
                         type="checkbox"
                         id="item-${item.id}"
                         ${item.completed ? 'checked' : ''}
+                        ${isComplete ? 'disabled' : ''}
                         onchange="app.toggleItem('${item.id}')"
                     />
                     <label for="item-${item.id}">
@@ -945,6 +997,7 @@ class KitchenListsApp {
                             class="task-input temperature"
                             value="${item.value || ''}"
                             placeholder="°F"
+                            ${isComplete ? 'disabled' : ''}
                             onchange="app.updateTaskValue('${item.id}', this.value)"
                             onblur="app.updateTaskValue('${item.id}', this.value)"
                         />
@@ -961,6 +1014,7 @@ class KitchenListsApp {
                             class="task-input text"
                             value="${this.escapeHtml(item.value || '')}"
                             placeholder="Enter value..."
+                            ${isComplete ? 'disabled' : ''}
                             onchange="app.updateTaskValue('${item.id}', this.value)"
                             onblur="app.updateTaskValue('${item.id}', this.value)"
                         />
@@ -969,7 +1023,7 @@ class KitchenListsApp {
                 `;
             }
 
-            const deleteButtonHTML = isManagerOrAdmin ?
+            const deleteButtonHTML = (isManagerOrAdmin && !isComplete) ?
                 `<button class="delete-btn" onclick="app.deleteItem('${item.id}')">Delete</button>` : '';
 
             const commentHTML = `
@@ -979,6 +1033,7 @@ class KitchenListsApp {
                         class="task-comment-input"
                         value="${this.escapeHtml(item.comment || '')}"
                         placeholder="Add comment..."
+                        ${isComplete ? 'disabled' : ''}
                         onchange="app.updateTaskComment('${item.id}', this.value)"
                         onblur="app.updateTaskComment('${item.id}', this.value)"
                     />
