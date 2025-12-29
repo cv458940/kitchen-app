@@ -7,11 +7,46 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <div class="container">
+    <!-- Login Screen -->
+    <div id="loginScreen" class="login-screen">
+        <div class="login-container">
+            <h1>🍳 Kitchen Lists</h1>
+            <p class="login-subtitle">Select your name to continue</p>
+            <select id="userSelect" class="user-select">
+                <option value="">-- Select User --</option>
+            </select>
+            <button id="loginBtn" class="login-btn">Login</button>
+        </div>
+    </div>
+
+    <!-- Main App (hidden until logged in) -->
+    <div id="mainApp" class="container" style="display: none;">
         <header>
             <h1>🍳 Kitchen Lists</h1>
-            <p class="subtitle">Stay organized in your kitchen</p>
+            <div class="user-info-bar">
+                <span id="userWelcome" class="user-welcome"></span>
+                <button id="logoutBtn" class="logout-btn">Logout</button>
+            </div>
         </header>
+
+        <!-- Manager Controls -->
+        <div id="managerControls" class="manager-controls" style="display: none;">
+            <div class="manager-section">
+                <div class="view-switcher">
+                    <button id="myListsBtn" class="view-btn active">My Lists</button>
+                    <button id="employeeListsBtn" class="view-btn">Employee Lists</button>
+                </div>
+                <button id="manageUsersBtn" class="manage-users-btn">👥 Manage Employees</button>
+            </div>
+        </div>
+
+        <!-- Employee Filter (for when viewing employee lists) -->
+        <div id="employeeFilter" class="employee-filter" style="display: none;">
+            <label for="employeeSelect">View lists for:</label>
+            <select id="employeeSelect" class="employee-select">
+                <option value="all">All Employees</option>
+            </select>
+        </div>
 
         <div class="checklist-manager">
             <div class="new-checklist-section">
@@ -41,6 +76,29 @@
 
             <div class="stats">
                 <span id="statsText">0 tasks total</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- User Management Modal -->
+    <div id="userModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Manage Employees</h2>
+                <button id="closeModalBtn" class="close-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="add-user-section">
+                    <h3>Add New Employee</h3>
+                    <input type="text" id="newUsername" placeholder="Enter employee name" />
+                    <button id="addUserBtn" class="add-user-btn">Add Employee</button>
+                </div>
+                <div class="user-list-section">
+                    <h3>Current Employees</h3>
+                    <div id="userList" class="user-list">
+                        <!-- User list will be populated here -->
+                    </div>
+                </div>
             </div>
         </div>
     </div>

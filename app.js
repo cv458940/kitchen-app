@@ -1,43 +1,151 @@
-class KitchenChecklistApp {
+class KitchenListsApp {
     constructor() {
+        this.currentUser = null;
         this.currentChecklist = null;
+        this.viewMode = 'myLists'; // 'myLists' or 'employeeLists'
+        this.selectedEmployee = 'all';
         this.data = this.loadData();
         this.init();
     }
 
     init() {
-        this.setupEventListeners();
-        this.renderChecklistTabs();
-
-        // Select first checklist if available
-        const checklistNames = Object.keys(this.data.checklists);
-        if (checklistNames.length > 0) {
-            this.switchChecklist(checklistNames[0]);
+        // Initialize default users if none exist
+        if (!this.data.users || this.data.users.length === 0) {
+            this.data.users = [
+                { username: 'Manager', role: 'manager' },
+                { username: 'Employee 1', role: 'employee' }
+            ];
+            this.saveData();
         }
+
+        this.setupEventListeners();
+        this.showLoginScreen();
     }
 
     setupEventListeners() {
-        const addItemBtn = document.getElementById('addItemBtn');
-        const newItemInput = document.getElementById('newItemInput');
-        const addChecklistBtn = document.getElementById('addChecklistBtn');
-        const newChecklistInput = document.getElementById('newChecklistInput');
-        const deleteChecklistBtn = document.getElementById('deleteChecklistBtn');
-
-        addItemBtn.addEventListener('click', () => this.addItem());
-        newItemInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                this.addItem();
-            }
+        // Login
+        document.getElementById('loginBtn').addEventListener('click', () => this.login());
+        document.getElementById('userSelect').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') this.login();
         });
 
-        addChecklistBtn.addEventListener('click', () => this.createChecklist());
-        newChecklistInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                this.createChecklist();
-            }
+        // Logout
+        document.getElementById('logoutBtn').addEventListener('click', () => this.logout());
+
+        // Checklist management
+        document.getElementById('addItemBtn').addEventListener('click', () => this.addItem());
+        document.getElementById('newItemInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') this.addItem();
         });
 
-        deleteChecklistBtn.addEventListener('click', () => this.deleteChecklist());
+        document.getElementById('addChecklistBtn').addEventListener('click', () => this.createChecklist());
+        document.getElementById('newChecklistInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') this.createChecklist();
+        });
+
+        document.getElementById('deleteChecklistBtn').addEventListener('click', () => this.deleteChecklist());
+
+        // Manager controls
+        document.getElementById('myListsBtn').addEventListener('click', () => this.switchView('myLists'));
+        document.getElementById('employeeListsBtn').addEventListener('click', () => this.switchView('employeeLists'));
+        document.getElementById('manageUsersBtn').addEventListener('click', () => this.openUserModal());
+
+        // Employee filter
+        document.getElementById('employeeSelect').addEventListener('change', (e) => {
+            this.selectedEmployee = e.target.value;
+            this.renderChecklistTabs();
+            this.currentChecklist = null;
+            this.renderChecklist();
+        });
+
+        // User management modal
+        document.getElementById('closeModalBtn').addEventListener('click', () => this.closeUserModal());
+        document.getElementById('addUserBtn').addEventListener('click', () => this.addUser());
+        document.getElementById('newUsername').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') this.addUser();
+        });
+    }
+
+    showLoginScreen() {
+        document.getElementById('loginScreen').style.display = 'flex';
+        document.getElementById('mainApp').style.display = 'none';
+        this.populateUserSelect();
+    }
+
+    populateUserSelect() {
+        const select = document.getElementById('userSelect');
+        select.innerHTML = '<option value="">-- Select User --</option>';
+
+        this.data.users.forEach(user => {
+            const option = document.createElement('option');
+            option.value = user.username;
+            option.textContent = `${user.username} (${user.role})`;
+            select.appendChild(option);
+        });
+    }
+
+    login() {
+        const username = document.getElementById('userSelect').value;
+        if (!username) {
+            alert('Please select a user!');
+            return;
+        }
+
+        this.currentUser = this.data.users.find(u => u.username === username);
+        document.getElementById('loginScreen').style.display = 'none';
+        document.getElementById('mainApp').style.display = 'block';
+
+        // Update welcome message
+        document.getElementById('userWelcome').textContent =
+            `Welcome, ${this.currentUser.username} (${this.currentUser.role})`;
+
+        // Show manager controls if manager
+        if (this.currentUser.role === 'manager') {
+            document.getElementById('managerControls').style.display = 'block';
+            this.populateEmployeeSelect();
+        } else {
+            document.getElementById('managerControls').style.display = 'none';
+        }
+
+        this.viewMode = 'myLists';
+        this.renderChecklistTabs();
+    }
+
+    logout() {
+        this.currentUser = null;
+        this.currentChecklist = null;
+        this.viewMode = 'myLists';
+        this.showLoginScreen();
+    }
+
+    switchView(mode) {
+        this.viewMode = mode;
+        this.currentChecklist = null;
+
+        // Update button states
+        document.getElementById('myListsBtn').classList.toggle('active', mode === 'myLists');
+        document.getElementById('employeeListsBtn').classList.toggle('active', mode === 'employeeLists');
+
+        // Show/hide employee filter
+        document.getElementById('employeeFilter').style.display =
+            mode === 'employeeLists' ? 'flex' : 'none';
+
+        this.renderChecklistTabs();
+        this.renderChecklist();
+    }
+
+    populateEmployeeSelect() {
+        const select = document.getElementById('employeeSelect');
+        select.innerHTML = '<option value="all">All Employees</option>';
+
+        this.data.users
+            .filter(u => u.role === 'employee')
+            .forEach(user => {
+                const option = document.createElement('option');
+                option.value = user.username;
+                option.textContent = user.username;
+                select.appendChild(option);
+            });
     }
 
     createChecklist() {
@@ -49,15 +157,21 @@ class KitchenChecklistApp {
             return;
         }
 
-        if (this.data.checklists[name]) {
+        const owner = this.viewMode === 'myLists' ? this.currentUser.username : this.selectedEmployee;
+
+        if (!this.data.checklists[owner]) {
+            this.data.checklists[owner] = {};
+        }
+
+        if (this.data.checklists[owner][name]) {
             alert('A checklist with this name already exists!');
             return;
         }
 
-        this.data.checklists[name] = [];
+        this.data.checklists[owner][name] = [];
         this.saveData();
         this.renderChecklistTabs();
-        this.switchChecklist(name);
+        this.switchChecklist(owner, name);
         input.value = '';
         input.focus();
     }
@@ -65,13 +179,16 @@ class KitchenChecklistApp {
     deleteChecklist() {
         if (!this.currentChecklist) return;
 
-        if (confirm(`Are you sure you want to delete "${this.currentChecklist}"? This will delete all tasks in this checklist.`)) {
-            delete this.data.checklists[this.currentChecklist];
+        const { owner, name } = this.currentChecklist;
+
+        if (confirm(`Are you sure you want to delete "${name}"? This will delete all tasks in this checklist.`)) {
+            delete this.data.checklists[owner][name];
             this.saveData();
 
-            const checklistNames = Object.keys(this.data.checklists);
-            if (checklistNames.length > 0) {
-                this.switchChecklist(checklistNames[0]);
+            const availableChecklists = this.getAvailableChecklists();
+            if (availableChecklists.length > 0) {
+                const first = availableChecklists[0];
+                this.switchChecklist(first.owner, first.name);
             } else {
                 this.currentChecklist = null;
                 document.getElementById('currentChecklistName').textContent = 'Select a checklist';
@@ -88,11 +205,42 @@ class KitchenChecklistApp {
         }
     }
 
+    getAvailableChecklists() {
+        const checklists = [];
+
+        if (this.viewMode === 'myLists') {
+            // Show only current user's checklists
+            const userChecklists = this.data.checklists[this.currentUser.username] || {};
+            Object.keys(userChecklists).forEach(name => {
+                checklists.push({ owner: this.currentUser.username, name });
+            });
+        } else {
+            // Show employee checklists (manager view)
+            if (this.selectedEmployee === 'all') {
+                this.data.users
+                    .filter(u => u.role === 'employee')
+                    .forEach(user => {
+                        const userChecklists = this.data.checklists[user.username] || {};
+                        Object.keys(userChecklists).forEach(name => {
+                            checklists.push({ owner: user.username, name });
+                        });
+                    });
+            } else {
+                const userChecklists = this.data.checklists[this.selectedEmployee] || {};
+                Object.keys(userChecklists).forEach(name => {
+                    checklists.push({ owner: this.selectedEmployee, name });
+                });
+            }
+        }
+
+        return checklists;
+    }
+
     renderChecklistTabs() {
         const tabsContainer = document.getElementById('checklistTabs');
-        const checklistNames = Object.keys(this.data.checklists);
+        const checklists = this.getAvailableChecklists();
 
-        if (checklistNames.length === 0) {
+        if (checklists.length === 0) {
             tabsContainer.innerHTML = `
                 <div class="no-checklists-message">
                     <p>Create your first checklist above to get started!</p>
@@ -101,19 +249,28 @@ class KitchenChecklistApp {
             return;
         }
 
-        tabsContainer.innerHTML = checklistNames.map(name => `
-            <button
-                class="tab-button ${name === this.currentChecklist ? 'active' : ''}"
-                onclick="app.switchChecklist('${this.escapeHtml(name)}')"
-            >
-                ${this.escapeHtml(name)}
-            </button>
-        `).join('');
+        tabsContainer.innerHTML = checklists.map(checklist => {
+            const isActive = this.currentChecklist &&
+                            this.currentChecklist.owner === checklist.owner &&
+                            this.currentChecklist.name === checklist.name;
+            const displayName = this.viewMode === 'employeeLists' ?
+                `${checklist.owner} - ${checklist.name}` : checklist.name;
+
+            return `
+                <button
+                    class="tab-button ${isActive ? 'active' : ''}"
+                    onclick="app.switchChecklist('${this.escapeHtml(checklist.owner)}', '${this.escapeHtml(checklist.name)}')"
+                >
+                    ${this.escapeHtml(displayName)}
+                </button>
+            `;
+        }).join('');
     }
 
-    switchChecklist(checklistName) {
-        this.currentChecklist = checklistName;
-        document.getElementById('currentChecklistName').textContent = checklistName;
+    switchChecklist(owner, name) {
+        this.currentChecklist = { owner, name };
+        document.getElementById('currentChecklistName').textContent =
+            this.viewMode === 'employeeLists' ? `${owner} - ${name}` : name;
         document.getElementById('deleteChecklistBtn').style.display = 'inline-block';
         this.renderChecklistTabs();
         this.renderChecklist();
@@ -134,13 +291,17 @@ class KitchenChecklistApp {
             return;
         }
 
+        const { owner, name } = this.currentChecklist;
+
         const newItem = {
             id: Date.now(),
             text: text,
-            completed: false
+            completed: false,
+            completedAt: null,
+            completedBy: null
         };
 
-        this.data.checklists[this.currentChecklist].push(newItem);
+        this.data.checklists[owner][name].push(newItem);
         this.saveData();
         this.renderChecklist();
         this.updateStats();
@@ -149,7 +310,8 @@ class KitchenChecklistApp {
     }
 
     deleteItem(id) {
-        this.data.checklists[this.currentChecklist] = this.data.checklists[this.currentChecklist].filter(
+        const { owner, name } = this.currentChecklist;
+        this.data.checklists[owner][name] = this.data.checklists[owner][name].filter(
             item => item.id !== id
         );
         this.saveData();
@@ -158,9 +320,18 @@ class KitchenChecklistApp {
     }
 
     toggleItem(id) {
-        const item = this.data.checklists[this.currentChecklist].find(item => item.id === id);
+        const { owner, name } = this.currentChecklist;
+        const item = this.data.checklists[owner][name].find(item => item.id === id);
+
         if (item) {
             item.completed = !item.completed;
+            if (item.completed) {
+                item.completedAt = new Date().toISOString();
+                item.completedBy = this.currentUser.username;
+            } else {
+                item.completedAt = null;
+                item.completedBy = null;
+            }
             this.saveData();
             this.renderChecklist();
             this.updateStats();
@@ -179,7 +350,8 @@ class KitchenChecklistApp {
             return;
         }
 
-        const items = this.data.checklists[this.currentChecklist] || [];
+        const { owner, name } = this.currentChecklist;
+        const items = this.data.checklists[owner][name] || [];
 
         if (items.length === 0) {
             container.innerHTML = `
@@ -191,18 +363,35 @@ class KitchenChecklistApp {
             return;
         }
 
-        container.innerHTML = items.map(item => `
-            <div class="checklist-item ${item.completed ? 'completed' : ''}">
-                <input
-                    type="checkbox"
-                    id="item-${item.id}"
-                    ${item.completed ? 'checked' : ''}
-                    onchange="app.toggleItem(${item.id})"
-                />
-                <label for="item-${item.id}">${this.escapeHtml(item.text)}</label>
-                <button class="delete-btn" onclick="app.deleteItem(${item.id})">Delete</button>
-            </div>
-        `).join('');
+        container.innerHTML = items.map(item => {
+            let timestampHTML = '';
+            if (item.completed && item.completedAt) {
+                const date = new Date(item.completedAt);
+                const timeStr = date.toLocaleString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                    hour: 'numeric',
+                    minute: '2-digit'
+                });
+                timestampHTML = `<span class="task-timestamp">✓ ${timeStr} by ${item.completedBy}</span>`;
+            }
+
+            return `
+                <div class="checklist-item ${item.completed ? 'completed' : ''}">
+                    <input
+                        type="checkbox"
+                        id="item-${item.id}"
+                        ${item.completed ? 'checked' : ''}
+                        onchange="app.toggleItem(${item.id})"
+                    />
+                    <label for="item-${item.id}">
+                        ${this.escapeHtml(item.text)}
+                        ${timestampHTML}
+                    </label>
+                    <button class="delete-btn" onclick="app.deleteItem(${item.id})">Delete</button>
+                </div>
+            `;
+        }).join('');
     }
 
     updateStats() {
@@ -211,7 +400,8 @@ class KitchenChecklistApp {
             return;
         }
 
-        const items = this.data.checklists[this.currentChecklist] || [];
+        const { owner, name } = this.currentChecklist;
+        const items = this.data.checklists[owner][name] || [];
         const total = items.length;
         const completed = items.filter(item => item.completed).length;
         const remaining = total - completed;
@@ -224,23 +414,97 @@ class KitchenChecklistApp {
         }
     }
 
+    // User Management
+    openUserModal() {
+        document.getElementById('userModal').style.display = 'flex';
+        this.renderUserList();
+    }
+
+    closeUserModal() {
+        document.getElementById('userModal').style.display = 'none';
+    }
+
+    addUser() {
+        const input = document.getElementById('newUsername');
+        const username = input.value.trim();
+
+        if (username === '') {
+            alert('Please enter a name!');
+            return;
+        }
+
+        if (this.data.users.find(u => u.username === username)) {
+            alert('A user with this name already exists!');
+            return;
+        }
+
+        this.data.users.push({ username, role: 'employee' });
+        this.saveData();
+        this.renderUserList();
+        this.populateUserSelect();
+        this.populateEmployeeSelect();
+        input.value = '';
+    }
+
+    deleteUser(username) {
+        if (username === this.currentUser.username) {
+            alert('You cannot delete yourself!');
+            return;
+        }
+
+        const user = this.data.users.find(u => u.username === username);
+        if (user.role === 'manager') {
+            alert('Cannot delete manager accounts!');
+            return;
+        }
+
+        if (confirm(`Are you sure you want to delete employee "${username}"? This will also delete all their checklists.`)) {
+            this.data.users = this.data.users.filter(u => u.username !== username);
+            delete this.data.checklists[username];
+            this.saveData();
+            this.renderUserList();
+            this.populateUserSelect();
+            this.populateEmployeeSelect();
+
+            if (this.viewMode === 'employeeLists') {
+                this.renderChecklistTabs();
+            }
+        }
+    }
+
+    renderUserList() {
+        const container = document.getElementById('userList');
+
+        const employees = this.data.users.filter(u => u.role === 'employee');
+
+        if (employees.length === 0) {
+            container.innerHTML = '<p style="color: #999; text-align: center;">No employees yet</p>';
+            return;
+        }
+
+        container.innerHTML = employees.map(user => `
+            <div class="user-item">
+                <div class="user-item-info">
+                    <span>${this.escapeHtml(user.username)}</span>
+                    <span class="user-role-badge ${user.role}">${user.role}</span>
+                </div>
+                <button class="delete-user-btn" onclick="app.deleteUser('${this.escapeHtml(user.username)}')">Delete</button>
+            </div>
+        `).join('');
+    }
+
+    // Data Management
     saveData() {
-        localStorage.setItem('kitchenChecklistData', JSON.stringify(this.data));
+        localStorage.setItem('kitchenListsData', JSON.stringify(this.data));
     }
 
     loadData() {
-        const saved = localStorage.getItem('kitchenChecklistData');
+        const saved = localStorage.getItem('kitchenListsData');
         if (saved) {
-            const data = JSON.parse(saved);
-            // Migrate old data format to new format
-            if (!data.checklists) {
-                return {
-                    checklists: data
-                };
-            }
-            return data;
+            return JSON.parse(saved);
         }
         return {
+            users: [],
             checklists: {}
         };
     }
@@ -252,4 +516,4 @@ class KitchenChecklistApp {
     }
 }
 
-const app = new KitchenChecklistApp();
+const app = new KitchenListsApp();
